@@ -43,6 +43,9 @@
 build/
 Build/
 build-*/
+out/
+Out/
+out-*/
 
 # CMake generated files
 CMakeFiles/
@@ -68,3 +71,7 @@ vcpkg_installed/
 Testing/
 .cache/
 .vs/
+
+# Third-party dependencies managed by gclient
+/third_party/*
+!/third_party/.gclient

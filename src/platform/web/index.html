@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shadertoy WebGPU Playground</title>
+    <!-- Modern Premium Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #080810;
+            --panel-bg: rgba(15, 15, 25, 0.6);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-color: #f3f4f6;
+            --accent-color: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.4);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: 'Outfit', sans-serif;
+            color: var(--text-color);
+        }
+
+        #canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Premium Glassmorphic Overlay Panel */
+        .overlay-panel {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            background: var(--panel-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            max-width: 320px;
+            z-index: 10;
+            pointer-events: auto;
+            transition: all 0.3s ease;
+        }
+
+        .overlay-panel:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 12px 40px 0 rgba(99, 102, 241, 0.1);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 800;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p {
+            font-size: 0.85rem;
+            color: #9ca3af;
+            line-height: 1.4;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #818cf8;
+            margin-bottom: 12px;
+        }
+
+        /* Modern Segmented Control Buttons */
+        .geometry-selector {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            color: #9ca3af;
+            padding: 12px 16px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-align: left;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.07);
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .btn.active {
+            background: var(--accent-color);
+            border-color: var(--accent-color);
+            color: #fff;
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+
+        .btn-shortcut {
+            font-size: 0.7rem;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: rgba(255, 255, 255, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Live Performance Stats */
+        .stats-panel {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 16px;
+        }
+
+        .stat-box {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
+            color: #6b7280;
+            margin-bottom: 2px;
+        }
+
+        .stat-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #f3f4f6;
+        }
+
+        /* Error/Loading Message Toast */
+        #status-message {
+            position: absolute;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            backdrop-filter: blur(8px);
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            color: #fca5a5;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Fullscreen Canvas for WebGPU Drawing -->
+    <canvas id="canvas"></canvas>
+
+    <!-- UI Overlay Panel -->
+    <div class="overlay-panel">
+        <h1>WebGPU Playground</h1>
+        <p>Shadertoy fragment shader rendering pipeline running in WebAssembly.</p>
+        
+        <div class="section-title">Geometry Type</div>
+        <div class="geometry-selector">
+            <button class="btn active" id="btn-quad" onclick="setGeometry(0)">
+                <span>2D Fullscreen Quad</span>
+                <span class="btn-shortcut">Key 1</span>
+            </button>
+            <button class="btn" id="btn-cube" onclick="setGeometry(1)">
+                <span>Procedural Cube</span>
+                <span class="btn-shortcut">Key 2</span>
+            </button>
+            <button class="btn" id="btn-sphere" onclick="setGeometry(2)">
+                <span>Procedural Sphere</span>
+                <span class="btn-shortcut">Key 3</span>
+            </button>
+        </div>
+
+        <div class="stats-panel">
+            <div class="stat-box">
+                <span class="stat-label">Frame Rate</span>
+                <span class="stat-value" id="fps-val">0.0 FPS</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">Elapsed Time</span>
+                <span class="stat-value" id="time-val">0.0s</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Toast -->
+    <div id="status-message"></div>
+
+    <!-- Load the Emscripten JavaScript glue code -->
+    <script src="engine_wasm.js"></script>
+
+    <script>
+        let engine = null;
+        let activeGeometry = 0; // 0: Quad, 1: Cube, 2: Sphere
+
+        function showError(message) {
+            const el = document.getElementById("status-message");
+            el.innerText = message;
+            el.style.display = "block";
+        }
+
+        // Set geometry type from buttons
+        function setGeometry(type) {
+            if (!engine) return;
+            activeGeometry = type;
+            engine.set_geometry_type(type);
+
+            // Update UI active states
+            document.querySelectorAll(".btn").forEach((btn, idx) => {
+                if (idx === type) {
+                    btn.classList.add("active");
+                } else {
+                    btn.classList.remove("active");
+                }
+            });
+        }
+
+        // Support keyboard shortcuts matching the native desktop target
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "1") setGeometry(0);
+            else if (e.key === "2") setGeometry(1);
+            else if (e.key === "3") setGeometry(2);
+        });
+
+        // Emscripten hook: runs when the WASM module is fully loaded and initialized
+        Module.onRuntimeInitialized = async () => {
+            console.log("Emscripten WebAssembly runtime initialized.");
+
+            try {
+                // Instantiate the EngineCore class exported via Embind
+                engine = new Module.EngineCore("#canvas");
+
+                // Initialize the engine (this configures the WebGPU canvas, adapter, and device)
+                if (!engine.initialize()) {
+                    showError("WebGPU initialization failed. Make sure your browser supports WebGPU and it is enabled.");
+                    return;
+                }
+
+                // Handle canvas resizing
+                const canvas = document.getElementById("canvas");
+                const resizeCanvas = () => {
+                    // Fit canvas to window size
+                    const width = window.innerWidth;
+                    const height = window.innerHeight;
+                    canvas.width = width;
+                    canvas.height = height;
+                    engine.resize(width, height);
+                };
+                window.addEventListener("resize", resizeCanvas);
+                resizeCanvas(); // Trigger initial resize
+
+                // Setup frame rendering loop
+                const startTime = performance.now();
+                let lastTime = startTime;
+                let frameCount = 0;
+                let fpsAccumulator = 0;
+                let fpsFrameCount = 0;
+
+                const tick = (timestamp) => {
+                    const totalTime = (timestamp - startTime) / 1000.0;
+                    const timeDelta = (timestamp - lastTime) / 1000.0;
+                    lastTime = timestamp;
+
+                    // Update UI stats
+                    document.getElementById("time-val").innerText = totalTime.toFixed(1) + "s";
+                    
+                    fpsAccumulator += timeDelta;
+                    fpsFrameCount++;
+                    if (fpsAccumulator >= 0.5) {
+                        const fps = fpsFrameCount / fpsAccumulator;
+                        document.getElementById("fps-val").innerText = fps.toFixed(1) + " FPS";
+                        fpsAccumulator = 0;
+                        fpsFrameCount = 0;
+                    }
+
+                    // Pass uniforms into C++ (time, time_delta, frame_rate, frame, mouse_x, mouse_y, mouse_z, mouse_w)
+                    engine.set_uniforms(
+                        totalTime,
+                        timeDelta,
+                        1.0 / Math.max(timeDelta, 0.001),
+                        frameCount,
+                        0.0, 0.0, 0.0, 0.0 // Dummy mouse inputs for Phase 1
+                    );
+
+                    // Call C++ tick to render the frame
+                    engine.tick(timestamp);
+
+                    frameCount++;
+                    requestAnimationFrame(tick);
+                };
+
+                // Start loop
+                requestAnimationFrame(tick);
+
+            } catch (err) {
+                console.error("Error during execution:", err);
+                showError("An error occurred during execution: " + err.message);
+            }
+        };
+    </script>
+</body>
+</html>
