@@ -9,6 +9,9 @@
 #include "core/renderer.h"
 #include "platform/native/native_context.h"
 
+#include <glslang/Public/ShaderLang.h>
+#include <tint/tint.h>
+
 struct AppState {
     NativeContext* context;
     Renderer* renderer;
@@ -46,6 +49,13 @@ void OnKey(GLFWwindow* window, int key, int scancode, int action, int mods) {
 }
 
 int main(int argc, char* argv[]) {
+    // Initialize shader compilers globally at application startup
+    if (!glslang::InitializeProcess()) {
+        std::cerr << "Failed to initialize glslang process!" << std::endl;
+        return -1;
+    }
+    tint::Initialize();
+
     std::cout << "Starting Shadertoy WebGPU Native Desktop..." << std::endl;
     std::cout << "Keys for testing geometry pipeline:" << std::endl;
     std::cout << "  [1] Fullscreen Quad" << std::endl;
@@ -124,6 +134,10 @@ int main(int argc, char* argv[]) {
 
     // Cleanup resources
     glfwSetWindowUserPointer(context->GetWindow(), nullptr);
+
+    // Shutdown shader compilers globally at application exit
+    tint::Shutdown();
+    glslang::FinalizeProcess();
 
     std::cout << "Application exited successfully." << std::endl;
     return 0;

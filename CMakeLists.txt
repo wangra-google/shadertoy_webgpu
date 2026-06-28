@@ -106,6 +106,8 @@ else()
         src/platform/native/native_context.cpp
         src/platform/native/native_context.h
         src/platform/native/main.cpp
+        src/platform/native/shader_compiler.cpp
+        src/platform/native/shader_compiler.h
         
         # Web files (included for reference in VS, but not compiled)
         src/platform/web/web_context.cpp
@@ -125,6 +127,8 @@ else()
         src/platform/native/native_context.cpp
         src/platform/native/native_context.h
         src/platform/native/main.cpp
+        src/platform/native/shader_compiler.cpp
+        src/platform/native/shader_compiler.h
         src/platform/web/web_context.cpp
         src/platform/web/web_context.h
         src/platform/web/bindings.cpp
@@ -145,6 +149,7 @@ else()
         src
         ${dawn_SOURCE_DIR}/include
         ${dawn_SOURCE_DIR}/src
+        ${dawn_SOURCE_DIR}/third_party/glslang/src
         ${dawn_BINARY_DIR}/gen/include
     )
 
@@ -154,6 +159,10 @@ else()
         dawn_native
         dawn_proc
         glfw
+        glslang
+        glslang-default-resource-limits
+        SPIRV
+        tint_api
     )
 
     # Link platform libraries for Windows Win32 surface support

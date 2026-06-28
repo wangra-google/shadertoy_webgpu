@@ -6,6 +6,7 @@
 #include <string>
 
 #include "core/renderer.h"
+#include "core/shadertoy_compat.h"
 #include "platform/web/web_context.h"
 
 class EngineCore {
@@ -32,13 +33,24 @@ class EngineCore {
     }
 
     bool UpdateShader(const std::string& passName,
-                      const std::string& wgslSource,
-                      const std::string& language) {
+                      const std::string& shaderSource,
+                      const std::string& language,
+                      const std::string& stage,
+                      bool isShadertoy) {
         if (!mRenderer) {
             return false;
         }
-        // In Phase 1, passName and language are ignored, compiling directly to renderer.
-        return mRenderer->UpdateShader(wgslSource);
+        ShaderStage cStage = ShaderStage::Fragment;
+        if (stage == "vertex") {
+            cStage = ShaderStage::Vertex;
+        } else if (stage == "compute") {
+            cStage = ShaderStage::Compute;
+        }
+        return mRenderer->UpdateShader(shaderSource, language, cStage, isShadertoy);
+    }
+
+    std::string GetWrappedGLSL(const std::string& glslSource) {
+        return std::string(GLSL_SHADERTOY_HEADER) + glslSource;
     }
 
     void LoadMeshData(const emscripten::val& verticesArray, const emscripten::val& indicesArray) {
@@ -92,6 +104,7 @@ EMSCRIPTEN_BINDINGS(engine_bindings) {
         .constructor<std::string>()
         .function("initialize", &EngineCore::Initialize)
         .function("update_shader", &EngineCore::UpdateShader)
+        .function("get_wrapped_glsl", &EngineCore::GetWrappedGLSL)
         .function("load_mesh_data", &EngineCore::LoadMeshData)
         .function("load_texture_data", &EngineCore::LoadTextureData)
         .function("set_uniforms", &EngineCore::SetUniforms)

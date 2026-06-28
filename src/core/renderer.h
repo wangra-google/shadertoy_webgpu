@@ -11,6 +11,8 @@
 
 enum class GeometryType { Quad, Cube, Sphere };
 
+enum class ShaderStage { Vertex, Fragment, Compute };
+
 struct ShadertoyUniforms {
     float iResolution[3];  // vec3
     float iTime;
@@ -50,7 +52,10 @@ class Renderer {
                      float mouseY,
                      float mouseZ,
                      float mouseW);
-    bool UpdateShader(const std::string& wgslSource);
+    bool UpdateShader(const std::string& shaderSource,
+                      const std::string& language = "wgsl",
+                      ShaderStage stage = ShaderStage::Fragment,
+                      bool isShadertoy = true);
     void SetGeometryType(GeometryType type);
     void Render();
     void Resize(uint32_t width, uint32_t height);
@@ -59,7 +64,7 @@ class Renderer {
     void SwapPipeline(WGPURenderPipeline newPipeline);
 
   private:
-    bool CreatePipeline(WGPUShaderModule shaderModule, bool isAsync);
+    bool CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uint64_t compilationId, bool isAsync);
     void UpdateUniformBuffers();
     void CreateDepthTexture();
 
@@ -87,6 +92,13 @@ class Renderer {
     // Depth Stencil for 3D meshes
     WGPUTexture mDepthTexture = nullptr;
     WGPUTextureView mDepthTextureView = nullptr;
+
+    // Shader Modules for independent stages
+    WGPUShaderModule mVertexShaderModule = nullptr;
+    WGPUShaderModule mFragmentShaderModule = nullptr;
+
+    // Track compilation requests to prevent race conditions during rapid edits
+    uint64_t mLatestRequestedCompilationId = 0;
 };
 
 #endif  // CORE_RENDERER_H_
