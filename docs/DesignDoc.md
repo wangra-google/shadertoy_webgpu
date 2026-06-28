@@ -565,31 +565,33 @@ This section enumerates every configuration, source, header, scripting, and layo
 * Setup `CMakeLists.txt` for dual target compilation (Native Dawn + Emscripten WASM).
 * Create platform abstraction headers (`src/core/graphics_context.h`) and backend bindings (`src/platform/web/` and `src/platform/native/` - with optional `TimestampQuery` checks).
 * Implement core WebGPU renderer: device creation, uniform structures (with padding and `static_assert` statements), MVP matrices.
-* Implement geometry pipeline for fullscreen quads and basic 3D meshes (Procedural cube, sphere).
+* Implement geometry pipeline for fullscreen quads (the foundation for Shadertoy rendering).
 
-### Phase 2: Multi-Pass Execution Engine & Texture Manager
-* Implement the multi-pass pipeline runner supporting offscreen render targets.
-* Implement ping-pong double-buffering logic for frame-feedback shaders checking `"ping_pong"` parameter.
-* Support rendering meshes in early passes and binding their outputs as textures in later post-process passes. Manage sRGB vs Linear (`RGBA8UnormSrgb` vs `RGBA8Unorm`) textures using bindings `"format"` configurations.
-
-### Phase 3: GLSL Compiler Toolchain (glslang + Tint)
+### Phase 2: GLSL Compiler Toolchain & Shadertoy Compatibility
 * Web: Integrate `@webgpu/glslang` and `twgsl` NPM packages into the React frontend compiler manager.
 * Native C++: Link Dawn's internal glslang + Tint compiler pipelines.
-* Build the Shadertoy wrapper header (emulating `mainImage`, `fragCoord`, `iChannel0..3`).
+* Build the Shadertoy wrapper header `src/core/shadertoy_compat.h` (emulating `mainImage`, `fragCoord`, `iResolution`, `iTime`, `iMouse`, etc.).
+* Wire the compiler pipeline so that GLSL entered by the user is wrapped, compiled to WGSL, and loaded into the C++ core renderer.
 
-### Phase 4: Mesh & Image Loader Implementations
-* **Native**: Integrate `tinygltf`, `tinyobjloader`, and `stb_image.h` to parse file paths passed via JSON or CLI.
-* **Web**: Setup WASM Embind class interfaces (`load_mesh_data`, etc.) passing memory safely via `emscripten::val` copies.
-* Wire IndexedDB asset caching to store binary meshes and images.
-* **ZIP Archive Package Loader**: Integrate **`miniz`** in C++ core and write wrapper interfaces to read **and write** `.swgscene` ZIP files directly.
-
-### Phase 5: Web UI (TypeScript / React) & Dual Editor
+### Phase 3: Web UI (TypeScript / React) & Code Editor (Shadertoy Replica)
 * Scaffold Vite + React (TypeScript) frontend.
 * Implement CodeMirror/Monaco editor with syntax highlighting for WGSL and GLSL.
-* Build side-by-side "Source Editor" and "Generated WGSL" preview panels.
-* Wire HTML5 drag-and-drop events, preloaded assets dropdowns, and UI selectors. Enforce 50MB limits and Web Worker loading screens.
-* **Diagnostic Interface**: Implement log overlay panels, error lint markers, compile play button, and `Alt+Enter` key listener.
-* **Scene Exporter**: Add **`JSZip`** implementation to zip and compile shaders, manifests, and IndexedDB binary assets into `.swgscene` files on save.
+* Build side-by-side "Source Editor" and "Canvas Viewport" panels.
+* **Diagnostic Interface**: Implement log overlay panels, error lint markers, compile play button, and `Alt+Enter` key listener to dynamically update the running shader.
+* Achieve a working, single-pass Shadertoy replica in the browser.
+
+### Phase 4: Texture Manager & Multi-Pass (Buffer A..D)
+* Implement the multi-pass pipeline runner supporting offscreen render targets.
+* Implement ping-pong double-buffering logic for frame-feedback shaders checking `"ping_pong"` parameter (enabling Buffer A, B, C, D feedback loops).
+* Manage sRGB vs Linear (`RGBA8UnormSrgb` vs `RGBA8Unorm`) textures using bindings `"format"` configurations.
+* Support loading static 2D textures (noise, keyboard, audio, or custom PNGs) and binding them to `iChannel0..3`.
+
+### Phase 5: Mesh Loader & 3D Geometry (Extensions)
+* **Native**: Integrate `tinygltf` and `tinyobjloader` to parse file paths passed via JSON or CLI.
+* **Web**: Setup WASM Embind class interfaces (`load_mesh_data`, etc.) passing memory safely via `emscripten::val` copies.
+* Support rendering 3D meshes in early passes and binding their outputs as textures in later post-process passes.
+* Wire IndexedDB asset caching to store binary meshes and images.
+* **ZIP Archive Package Loader**: Integrate **`miniz`** in C++ core and write wrapper interfaces to read **and write** `.swgscene` ZIP files directly.
 
 ### Phase 6: Native Profiling & Parity Harness
 * Implement native GLFW window wrapper, Dear ImGui overlay menus, and CLI harness (`--scene`, `--frame`, `--screenshot`).
@@ -606,3 +608,4 @@ This section enumerates every configuration, source, header, scripting, and layo
 ### Phase 8: GCP Deployment & Secure Hosting (Public Release)
 * Build static production files via `npm run build`.
 * Deploy static files to Firebase Hosting using `firebase deploy`.
+
