@@ -1,7 +1,7 @@
-#ifndef CORE_CONFIG_H
-#define CORE_CONFIG_H
+#ifndef CORE_CONFIG_H_
+#define CORE_CONFIG_H_
 
-#include <stdint.h>
+#include <cstdint>
 
 namespace config {
     // Native Desktop Window defaults
@@ -15,4 +15,5 @@ namespace config {
     constexpr const char* kWebCanvasSelector = "#canvas";
 }
 
-#endif // CORE_CONFIG_H
+#endif // CORE_CONFIG_H_
+

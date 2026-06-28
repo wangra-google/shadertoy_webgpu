@@ -1,7 +1,7 @@
-#ifndef GRAPHICS_CONTEXT_H
-#define GRAPHICS_CONTEXT_H
+#ifndef CORE_GRAPHICS_CONTEXT_H_
+#define CORE_GRAPHICS_CONTEXT_H_
 
-#include <stdint.h>
+#include <cstdint>
 #include <webgpu/webgpu.h>
 
 class GraphicsContext {
@@ -27,4 +27,5 @@ class GraphicsContext {
     virtual uint32_t GetHeight() const = 0;
 };
 
-#endif  // GRAPHICS_CONTEXT_H
+#endif  // CORE_GRAPHICS_CONTEXT_H_
+

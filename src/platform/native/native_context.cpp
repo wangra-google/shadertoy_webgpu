@@ -5,35 +5,42 @@
 
 #include "core/config.h"
 
-#define GLFW_EXPOSE_NATIVE_WIN32
+#if defined(_WIN32)
+    #define GLFW_EXPOSE_NATIVE_WIN32
+    #include <windows.h>
+#elif defined(__APPLE__)
+    #define GLFW_EXPOSE_NATIVE_COCOA
+#else
+    #define GLFW_EXPOSE_NATIVE_X11
+#endif
+
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 #include <dawn/dawn_proc.h>
 #include <dawn/native/DawnNative.h>
-#include <windows.h>
 
-NativeContext::NativeContext(uint32_t width, uint32_t height) : m_width(width), m_height(height) {}
+NativeContext::NativeContext(uint32_t width, uint32_t height) : mWidth(width), mHeight(height) {}
 
 NativeContext::~NativeContext() {
-    if (m_surface) {
-        wgpuSurfaceUnconfigure(m_surface);
-        wgpuSurfaceRelease(m_surface);
+    if (mSurface) {
+        wgpuSurfaceUnconfigure(mSurface);
+        wgpuSurfaceRelease(mSurface);
     }
-    if (m_queue) {
-        wgpuQueueRelease(m_queue);
+    if (mQueue) {
+        wgpuQueueRelease(mQueue);
     }
-    if (m_device) {
-        wgpuDeviceRelease(m_device);
+    if (mDevice) {
+        wgpuDeviceRelease(mDevice);
     }
-    if (m_adapter) {
-        wgpuAdapterRelease(m_adapter);
+    if (mAdapter) {
+        wgpuAdapterRelease(mAdapter);
     }
-    if (m_instance) {
-        wgpuInstanceRelease(m_instance);
+    if (mInstance) {
+        wgpuInstanceRelease(mInstance);
     }
 
-    if (m_window) {
-        glfwDestroyWindow(m_window);
+    if (mWindow) {
+        glfwDestroyWindow(mWindow);
         glfwTerminate();
     }
 }
@@ -50,26 +57,27 @@ bool NativeContext::Init() {
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-    m_window = glfwCreateWindow(m_width, m_height, config::kNativeWindowTitle, nullptr, nullptr);
-    if (!m_window) {
+    mWindow = glfwCreateWindow(mWidth, mHeight, config::kNativeWindowTitle, nullptr, nullptr);
+    if (!mWindow) {
         std::cerr << "Failed to create GLFW window!" << std::endl;
         glfwTerminate();
         return false;
     }
 
     // Set user pointer to context for callbacks
-    glfwSetWindowUserPointer(m_window, this);
+    glfwSetWindowUserPointer(mWindow, this);
 
     // Create Instance
     WGPUInstanceDescriptor instanceDesc = {};
-    m_instance = wgpuCreateInstance(&instanceDesc);
-    if (!m_instance) {
+    mInstance = wgpuCreateInstance(&instanceDesc);
+    if (!mInstance) {
         std::cerr << "Failed to create WGPU Instance!" << std::endl;
         return false;
     }
 
-    // Create Surface from HWND
-    HWND hwnd = glfwGetWin32Window(m_window);
+    // Create Surface depending on platform
+#if defined(_WIN32)
+    HWND hwnd = glfwGetWin32Window(mWindow);
     HINSTANCE hinstance = GetModuleHandle(nullptr);
 
     WGPUSurfaceSourceWindowsHWND winDesc = {};
@@ -80,15 +88,39 @@ bool NativeContext::Init() {
 
     WGPUSurfaceDescriptor surfaceDesc = {};
     surfaceDesc.nextInChain = &winDesc.chain;
-    m_surface = wgpuInstanceCreateSurface(m_instance, &surfaceDesc);
-    if (!m_surface) {
+    mSurface = wgpuInstanceCreateSurface(mInstance, &surfaceDesc);
+#elif defined(__APPLE__)
+    // macOS Cocoa/Metal surface creation (stubbed/schematic for compilation)
+    // In a full macOS build, we would configure a CAMetalLayer on the NSWindow.
+    WGPUSurfaceSourceMetalLayer metalDesc = {};
+    metalDesc.chain.sType = WGPUSType_SurfaceSourceMetalLayer;
+    metalDesc.chain.next = nullptr;
+    metalDesc.layer = nullptr; // Would be set to CAMetalLayer
+
+    WGPUSurfaceDescriptor surfaceDesc = {};
+    surfaceDesc.nextInChain = &metalDesc.chain;
+    mSurface = wgpuInstanceCreateSurface(mInstance, &surfaceDesc);
+#else
+    // Linux X11 surface creation (stubbed/schematic for compilation)
+    WGPUSurfaceSourceXlibWindow x11Desc = {};
+    x11Desc.chain.sType = WGPUSType_SurfaceSourceXlibWindow;
+    x11Desc.chain.next = nullptr;
+    x11Desc.display = glfwGetX11Display();
+    x11Desc.window = glfwGetX11Window(mWindow);
+
+    WGPUSurfaceDescriptor surfaceDesc = {};
+    surfaceDesc.nextInChain = &x11Desc.chain;
+    mSurface = wgpuInstanceCreateSurface(mInstance, &surfaceDesc);
+#endif
+
+    if (!mSurface) {
         std::cerr << "Failed to create WGPU Surface!" << std::endl;
         return false;
     }
 
     // Request Adapter
     WGPURequestAdapterOptions options = {};
-    options.compatibleSurface = m_surface;
+    options.compatibleSurface = mSurface;
     options.powerPreference = WGPUPowerPreference_HighPerformance;
 
     struct AdapterRequestResult {
@@ -117,18 +149,18 @@ bool NativeContext::Init() {
     adapterCallbackInfo.userdata1 = &adapterResult;
 
     WGPUFuture adapterFuture =
-        wgpuInstanceRequestAdapter(m_instance, &options, adapterCallbackInfo);
+        wgpuInstanceRequestAdapter(mInstance, &options, adapterCallbackInfo);
 
     WGPUFutureWaitInfo adapterWaitInfo = {};
     adapterWaitInfo.future = adapterFuture;
     adapterWaitInfo.completed = false;
 
     while (!adapterResult.completed) {
-        wgpuInstanceWaitAny(m_instance, 1, &adapterWaitInfo, UINT64_MAX);
+        wgpuInstanceWaitAny(mInstance, 1, &adapterWaitInfo, UINT64_MAX);
     }
 
-    m_adapter = adapterResult.adapter;
-    if (!m_adapter) {
+    mAdapter = adapterResult.adapter;
+    if (!mAdapter) {
         std::cerr << "No compatible WGPU Adapter found!" << std::endl;
         return false;
     }
@@ -136,11 +168,11 @@ bool NativeContext::Init() {
     // Enumerate features to check for optional TimestampQuery
     std::vector<WGPUFeatureName> requiredFeatures;
     WGPUSupportedFeatures supportedFeatures = {};
-    wgpuAdapterGetFeatures(m_adapter, &supportedFeatures);
+    wgpuAdapterGetFeatures(mAdapter, &supportedFeatures);
     for (size_t i = 0; i < supportedFeatures.featureCount; ++i) {
         if (supportedFeatures.features[i] == WGPUFeatureName_TimestampQuery) {
             requiredFeatures.push_back(WGPUFeatureName_TimestampQuery);
-            m_timestampsSupported = true;
+            mTimestampsSupported = true;
             break;
         }
     }
@@ -190,26 +222,26 @@ bool NativeContext::Init() {
     };
     deviceCallbackInfo.userdata1 = &deviceResult;
 
-    WGPUFuture deviceFuture = wgpuAdapterRequestDevice(m_adapter, &deviceDesc, deviceCallbackInfo);
+    WGPUFuture deviceFuture = wgpuAdapterRequestDevice(mAdapter, &deviceDesc, deviceCallbackInfo);
 
     WGPUFutureWaitInfo deviceWaitInfo = {};
     deviceWaitInfo.future = deviceFuture;
     deviceWaitInfo.completed = false;
 
     while (!deviceResult.completed) {
-        wgpuInstanceWaitAny(m_instance, 1, &deviceWaitInfo, UINT64_MAX);
+        wgpuInstanceWaitAny(mInstance, 1, &deviceWaitInfo, UINT64_MAX);
     }
 
-    m_device = deviceResult.device;
-    if (!m_device) {
+    mDevice = deviceResult.device;
+    if (!mDevice) {
         std::cerr << "Failed to create WGPU Device!" << std::endl;
         return false;
     }
 
-    m_queue = wgpuDeviceGetQueue(m_device);
+    mQueue = wgpuDeviceGetQueue(mDevice);
 
     // Initial Swapchain creation
-    return CreateSwapChain(m_width, m_height);
+    return CreateSwapChain(mWidth, mHeight);
 }
 
 bool NativeContext::CreateSwapChain(uint32_t width, uint32_t height) {
@@ -217,25 +249,25 @@ bool NativeContext::CreateSwapChain(uint32_t width, uint32_t height) {
         return false;
     }
 
-    m_width = width;
-    m_height = height;
+    mWidth = width;
+    mHeight = height;
 
     WGPUSurfaceConfiguration config = {};
-    config.device = m_device;
-    config.format = m_swapChainFormat;
+    config.device = mDevice;
+    config.format = mSwapChainFormat;
     config.usage = WGPUTextureUsage_RenderAttachment;
-    config.width = m_width;
-    config.height = m_height;
+    config.width = mWidth;
+    config.height = mHeight;
     config.presentMode = WGPUPresentMode_Fifo;
     config.alphaMode = WGPUCompositeAlphaMode_Auto;
 
-    wgpuSurfaceConfigure(m_surface, &config);
+    wgpuSurfaceConfigure(mSurface, &config);
     return true;
 }
 
 WGPUTextureView NativeContext::GetCurrentSwapChainView() {
     WGPUSurfaceTexture surfaceTexture = {};
-    wgpuSurfaceGetCurrentTexture(m_surface, &surfaceTexture);
+    wgpuSurfaceGetCurrentTexture(mSurface, &surfaceTexture);
 
     if (surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal &&
         surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
@@ -246,7 +278,7 @@ WGPUTextureView NativeContext::GetCurrentSwapChainView() {
 
     WGPUTextureViewDescriptor viewDesc = {};
     viewDesc.label = {"SwapChain View", WGPU_STRLEN};
-    viewDesc.format = m_swapChainFormat;
+    viewDesc.format = mSwapChainFormat;
     viewDesc.dimension = WGPUTextureViewDimension_2D;
     viewDesc.baseMipLevel = 0;
     viewDesc.mipLevelCount = 1;
@@ -263,14 +295,14 @@ WGPUTextureView NativeContext::GetCurrentSwapChainView() {
 }
 
 void NativeContext::Present() {
-    wgpuSurfacePresent(m_surface);
+    wgpuSurfacePresent(mSurface);
 }
 
 bool NativeContext::ShouldClose() const {
-    if (!m_window) {
+    if (!mWindow) {
         return true;
     }
-    return glfwWindowShouldClose(m_window);
+    return glfwWindowShouldClose(mWindow);
 }
 
 void NativeContext::PollEvents() {

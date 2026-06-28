@@ -4,32 +4,33 @@
 
 #include <iostream>
 
-WebContext::WebContext(const std::string& canvasSelector) : m_canvasSelector(canvasSelector) {}
+WebContext::WebContext(const std::string& canvasSelector, uint32_t width, uint32_t height)
+    : mCanvasSelector(canvasSelector), mWidth(width), mHeight(height) {}
 
 WebContext::~WebContext() {
-    if (m_surface) {
-        wgpuSurfaceUnconfigure(m_surface);
-        wgpuSurfaceRelease(m_surface);
+    if (mSurface) {
+        wgpuSurfaceUnconfigure(mSurface);
+        wgpuSurfaceRelease(mSurface);
     }
-    if (m_queue) {
-        wgpuQueueRelease(m_queue);
+    if (mQueue) {
+        wgpuQueueRelease(mQueue);
     }
-    if (m_device) {
-        wgpuDeviceRelease(m_device);
+    if (mDevice) {
+        wgpuDeviceRelease(mDevice);
     }
-    if (m_adapter) {
-        wgpuAdapterRelease(m_adapter);
+    if (mAdapter) {
+        wgpuAdapterRelease(mAdapter);
     }
-    if (m_instance) {
-        wgpuInstanceRelease(m_instance);
+    if (mInstance) {
+        wgpuInstanceRelease(mInstance);
     }
 }
 
 bool WebContext::Init() {
     // Create Instance
     WGPUInstanceDescriptor instanceDesc = {};
-    m_instance = wgpuCreateInstance(&instanceDesc);
-    if (!m_instance) {
+    mInstance = wgpuCreateInstance(&instanceDesc);
+    if (!mInstance) {
         std::cerr << "Failed to create WGPU Instance!" << std::endl;
         return false;
     }
@@ -38,19 +39,19 @@ bool WebContext::Init() {
     WGPUEmscriptenSurfaceSourceCanvasHTMLSelector canvasDesc = {};
     canvasDesc.chain.sType = WGPUSType_EmscriptenSurfaceSourceCanvasHTMLSelector;
     canvasDesc.chain.next = nullptr;
-    canvasDesc.selector = {m_canvasSelector.c_str(), WGPU_STRLEN};
+    canvasDesc.selector = {mCanvasSelector.c_str(), WGPU_STRLEN};
 
     WGPUSurfaceDescriptor surfaceDesc = {};
     surfaceDesc.nextInChain = &canvasDesc.chain;
-    m_surface = wgpuInstanceCreateSurface(m_instance, &surfaceDesc);
-    if (!m_surface) {
+    mSurface = wgpuInstanceCreateSurface(mInstance, &surfaceDesc);
+    if (!mSurface) {
         std::cerr << "Failed to create WGPU Surface from canvas selector!" << std::endl;
         return false;
     }
 
     // Request Adapter
     WGPURequestAdapterOptions options = {};
-    options.compatibleSurface = m_surface;
+    options.compatibleSurface = mSurface;
     options.powerPreference = WGPUPowerPreference_HighPerformance;
 
     struct AdapterRequestResult {
@@ -79,19 +80,19 @@ bool WebContext::Init() {
     adapterCallbackInfo.userdata1 = &adapterResult;
 
     WGPUFuture adapterFuture =
-        wgpuInstanceRequestAdapter(m_instance, &options, adapterCallbackInfo);
+        wgpuInstanceRequestAdapter(mInstance, &options, adapterCallbackInfo);
 
     WGPUFutureWaitInfo adapterWaitInfo = {};
     adapterWaitInfo.future = adapterFuture;
     adapterWaitInfo.completed = false;
 
     while (!adapterResult.completed) {
-        wgpuInstanceWaitAny(m_instance, 1, &adapterWaitInfo, 0);
+        wgpuInstanceWaitAny(mInstance, 1, &adapterWaitInfo, 0);
         emscripten_sleep(1);
     }
 
-    m_adapter = adapterResult.adapter;
-    if (!m_adapter) {
+    mAdapter = adapterResult.adapter;
+    if (!mAdapter) {
         std::cerr << "No compatible WGPU Adapter found!" << std::endl;
         return false;
     }
@@ -139,51 +140,51 @@ bool WebContext::Init() {
     };
     deviceCallbackInfo.userdata1 = &deviceResult;
 
-    WGPUFuture deviceFuture = wgpuAdapterRequestDevice(m_adapter, &deviceDesc, deviceCallbackInfo);
+    WGPUFuture deviceFuture = wgpuAdapterRequestDevice(mAdapter, &deviceDesc, deviceCallbackInfo);
 
     WGPUFutureWaitInfo deviceWaitInfo = {};
     deviceWaitInfo.future = deviceFuture;
     deviceWaitInfo.completed = false;
 
     while (!deviceResult.completed) {
-        wgpuInstanceWaitAny(m_instance, 1, &deviceWaitInfo, 0);
+        wgpuInstanceWaitAny(mInstance, 1, &deviceWaitInfo, 0);
         emscripten_sleep(1);
     }
 
-    m_device = deviceResult.device;
-    if (!m_device) {
+    mDevice = deviceResult.device;
+    if (!mDevice) {
         std::cerr << "Failed to create WGPU Device!" << std::endl;
         return false;
     }
 
-    m_queue = wgpuDeviceGetQueue(m_device);
+    mQueue = wgpuDeviceGetQueue(mDevice);
 
-    return CreateSwapChain(m_width, m_height);
+    return CreateSwapChain(mWidth, mHeight);
 }
 
 bool WebContext::CreateSwapChain(uint32_t width, uint32_t height) {
     if (width == 0 || height == 0) {
         return false;
     }
-    m_width = width;
-    m_height = height;
+    mWidth = width;
+    mHeight = height;
 
     WGPUSurfaceConfiguration config = {};
-    config.device = m_device;
-    config.format = m_swapChainFormat;
+    config.device = mDevice;
+    config.format = mSwapChainFormat;
     config.usage = WGPUTextureUsage_RenderAttachment;
-    config.width = m_width;
-    config.height = m_height;
+    config.width = mWidth;
+    config.height = mHeight;
     config.presentMode = WGPUPresentMode_Fifo;
     config.alphaMode = WGPUCompositeAlphaMode_Auto;
 
-    wgpuSurfaceConfigure(m_surface, &config);
+    wgpuSurfaceConfigure(mSurface, &config);
     return true;
 }
 
 WGPUTextureView WebContext::GetCurrentSwapChainView() {
     WGPUSurfaceTexture surfaceTexture = {};
-    wgpuSurfaceGetCurrentTexture(m_surface, &surfaceTexture);
+    wgpuSurfaceGetCurrentTexture(mSurface, &surfaceTexture);
 
     if (surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal &&
         surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
@@ -194,7 +195,7 @@ WGPUTextureView WebContext::GetCurrentSwapChainView() {
 
     WGPUTextureViewDescriptor viewDesc = {};
     viewDesc.label = {"Web SwapChain View", WGPU_STRLEN};
-    viewDesc.format = m_swapChainFormat;
+    viewDesc.format = mSwapChainFormat;
     viewDesc.dimension = WGPUTextureViewDimension_2D;
     viewDesc.baseMipLevel = 0;
     viewDesc.mipLevelCount = 1;

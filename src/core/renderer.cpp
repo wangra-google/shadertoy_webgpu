@@ -3,9 +3,8 @@
 #include <cmath>
 #include <iostream>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+namespace {
+constexpr float kPi = 3.14159265358979323846f;
 
 // Default fallback WGSL shader for Phase 1
 const char* DEFAULT_WGSL_SHADER = R"(
@@ -21,10 +20,10 @@ struct ShadertoyUniforms {
 };
 
 struct CameraUniforms {
-    u_ViewProj       : mat4x4<f32>,
-    u_Model          : mat4x4<f32>,
-    u_NormalMatrix   : mat4x4<f32>,
-    u_CameraPosition : vec3<f32>,
+    uViewProj       : mat4x4<f32>,
+    uModel          : mat4x4<f32>,
+    uNormalMatrix   : mat4x4<f32>,
+    uCameraPosition : vec3<f32>,
     _pad1            : f32,
 };
 
@@ -48,10 +47,10 @@ struct VertexOutput {
 @vertex
 fn vs_main(input : VertexInput) -> VertexOutput {
     var output : VertexOutput;
-    let worldPos = u_camera.u_Model * vec4<f32>(input.position, 1.0);
+    let worldPos = u_camera.uModel * vec4<f32>(input.position, 1.0);
     output.worldPos = worldPos.xyz;
-    output.position = u_camera.u_ViewProj * worldPos;
-    output.normal = (u_camera.u_NormalMatrix * vec4<f32>(input.normal, 0.0)).xyz;
+    output.position = u_camera.uViewProj * worldPos;
+    output.normal = (u_camera.uNormalMatrix * vec4<f32>(input.normal, 0.0)).xyz;
     output.uv = input.uv;
     return output;
 }
@@ -71,64 +70,58 @@ fn fs_main(input : VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(baseColor * diffuse, 1.0);
 }
 )";
+}  // namespace
 
 Renderer::Renderer(GraphicsContext* context)
-    : m_context(context),
-      m_bindGroupLayout(nullptr),
-      m_pipelineLayout(nullptr),
-      m_renderPipeline(nullptr),
-      m_bindGroup(nullptr),
-      m_shadertoyUniformBuffer(nullptr),
-      m_cameraUniformBuffer(nullptr),
-      m_quadMesh(nullptr),
-      m_cubeMesh(nullptr),
-      m_sphereMesh(nullptr),
-      m_geometryType(GeometryType::Quad),
-      m_depthTexture(nullptr),
-      m_depthTextureView(nullptr) {
-    // Clear structs
-    memset(&m_shadertoyUniformsVal, 0, sizeof(ShadertoyUniforms));
-    memset(&m_cameraUniformsVal, 0, sizeof(CameraUniforms));
+    : mContext(context),
+      mBindGroupLayout(nullptr),
+      mPipelineLayout(nullptr),
+      mRenderPipeline(nullptr),
+      mBindGroup(nullptr),
+      mShadertoyUniformBuffer(nullptr),
+      mCameraUniformBuffer(nullptr),
+      mQuadMesh(nullptr),
+      mCubeMesh(nullptr),
+      mSphereMesh(nullptr),
+      mGeometryType(GeometryType::Quad),
+      mDepthTexture(nullptr),
+      mDepthTextureView(nullptr) {
 }
 
 Renderer::~Renderer() {
-    delete m_quadMesh;
-    delete m_cubeMesh;
-    delete m_sphereMesh;
-
-    if (m_depthTextureView) {
-        wgpuTextureViewRelease(m_depthTextureView);
+    if (mDepthTextureView) {
+        wgpuTextureViewRelease(mDepthTextureView);
     }
-    if (m_depthTexture) {
-        wgpuTextureDestroy(m_depthTexture);
-        wgpuTextureRelease(m_depthTexture);
+    if (mDepthTexture) {
+        wgpuTextureDestroy(mDepthTexture);
+        wgpuTextureRelease(mDepthTexture);
     }
 
-    if (m_bindGroup) {
-        wgpuBindGroupRelease(m_bindGroup);
+    if (mBindGroup) {
+        wgpuBindGroupRelease(mBindGroup);
     }
-    if (m_renderPipeline) {
-        wgpuRenderPipelineRelease(m_renderPipeline);
+    if (mRenderPipeline) {
+        wgpuRenderPipelineRelease(mRenderPipeline);
     }
-    if (m_pipelineLayout) {
-        wgpuPipelineLayoutRelease(m_pipelineLayout);
+    if (mPipelineLayout) {
+        wgpuPipelineLayoutRelease(mPipelineLayout);
     }
-    if (m_bindGroupLayout) {
-        wgpuBindGroupLayoutRelease(m_bindGroupLayout);
+    if (mBindGroupLayout) {
+        wgpuBindGroupLayoutRelease(mBindGroupLayout);
     }
 
-    if (m_shadertoyUniformBuffer) {
-        wgpuBufferDestroy(m_shadertoyUniformBuffer);
-        wgpuBufferRelease(m_shadertoyUniformBuffer);
+    if (mShadertoyUniformBuffer) {
+        wgpuBufferDestroy(mShadertoyUniformBuffer);
+        wgpuBufferRelease(mShadertoyUniformBuffer);
     }
-    if (m_cameraUniformBuffer) {
-        wgpuBufferDestroy(m_cameraUniformBuffer);
-        wgpuBufferRelease(m_cameraUniformBuffer);
+    if (mCameraUniformBuffer) {
+        wgpuBufferDestroy(mCameraUniformBuffer);
+        wgpuBufferRelease(mCameraUniformBuffer);
     }
 }
 
 bool Renderer::Init() {
-    WGPUDevice device = m_context->GetDevice();
+    WGPUDevice device = mContext->GetDevice();
     if (!device) {
         std::cerr << "Failed to initialize Renderer: device is null!" << std::endl;
         return false;
@@ -141,11 +134,11 @@ bool Renderer::Init() {
 
     uniformBufferDesc.label = {"Shadertoy Uniform Buffer", WGPU_STRLEN};
     uniformBufferDesc.size = sizeof(ShadertoyUniforms);
-    m_shadertoyUniformBuffer = wgpuDeviceCreateBuffer(device, &uniformBufferDesc);
+    mShadertoyUniformBuffer = wgpuDeviceCreateBuffer(device, &uniformBufferDesc);
 
     uniformBufferDesc.label = {"Camera Uniform Buffer", WGPU_STRLEN};
     uniformBufferDesc.size = sizeof(CameraUniforms);
-    m_cameraUniformBuffer = wgpuDeviceCreateBuffer(device, &uniformBufferDesc);
+    mCameraUniformBuffer = wgpuDeviceCreateBuffer(device, &uniformBufferDesc);
 
     // Create Bind Group Layout
     WGPUBindGroupLayoutEntry bindGroupLayoutEntries[2] = {};
@@ -168,38 +161,38 @@ bool Renderer::Init() {
     bindGroupLayoutDesc.label = {"Renderer Bind Group Layout", WGPU_STRLEN};
     bindGroupLayoutDesc.entryCount = 2;
     bindGroupLayoutDesc.entries = bindGroupLayoutEntries;
-    m_bindGroupLayout = wgpuDeviceCreateBindGroupLayout(device, &bindGroupLayoutDesc);
+    mBindGroupLayout = wgpuDeviceCreateBindGroupLayout(device, &bindGroupLayoutDesc);
 
     // Create Bind Group
     WGPUBindGroupEntry bindGroupEntries[2] = {};
     bindGroupEntries[0].binding = 0;
-    bindGroupEntries[0].buffer = m_shadertoyUniformBuffer;
+    bindGroupEntries[0].buffer = mShadertoyUniformBuffer;
     bindGroupEntries[0].offset = 0;
     bindGroupEntries[0].size = sizeof(ShadertoyUniforms);
 
     bindGroupEntries[1].binding = 1;
-    bindGroupEntries[1].buffer = m_cameraUniformBuffer;
+    bindGroupEntries[1].buffer = mCameraUniformBuffer;
     bindGroupEntries[1].offset = 0;
     bindGroupEntries[1].size = sizeof(CameraUniforms);
 
     WGPUBindGroupDescriptor bindGroupDesc = {};
     bindGroupDesc.label = {"Renderer Bind Group", WGPU_STRLEN};
-    bindGroupDesc.layout = m_bindGroupLayout;
+    bindGroupDesc.layout = mBindGroupLayout;
     bindGroupDesc.entryCount = 2;
     bindGroupDesc.entries = bindGroupEntries;
-    m_bindGroup = wgpuDeviceCreateBindGroup(device, &bindGroupDesc);
+    mBindGroup = wgpuDeviceCreateBindGroup(device, &bindGroupDesc);
 
     // Create Pipeline Layout
     WGPUPipelineLayoutDescriptor pipelineLayoutDesc = {};
     pipelineLayoutDesc.label = {"Renderer Pipeline Layout", WGPU_STRLEN};
     pipelineLayoutDesc.bindGroupLayoutCount = 1;
-    pipelineLayoutDesc.bindGroupLayouts = &m_bindGroupLayout;
-    m_pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDesc);
+    pipelineLayoutDesc.bindGroupLayouts = &mBindGroupLayout;
+    mPipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDesc);
 
     // Create Geometries
-    m_quadMesh = Mesh::CreateQuad(device);
-    m_cubeMesh = Mesh::CreateCube(device);
-    m_sphereMesh = Mesh::CreateSphere(device);
+    mQuadMesh = Mesh::CreateQuad(device);
+    mCubeMesh = Mesh::CreateCube(device);
+    mSphereMesh = Mesh::CreateSphere(device);
 
     // Depth buffer texture
     CreateDepthTexture();
@@ -220,25 +213,25 @@ bool Renderer::Init() {
 }
 
 void Renderer::SetUniforms(float time,
-                           float time_delta,
-                           float frame_rate,
+                           float timeDelta,
+                           float frameRate,
                            int frame,
-                           float mouse_x,
-                           float mouse_y,
-                           float mouse_z,
-                           float mouse_w) {
-    m_shadertoyUniformsVal.iTime = time;
-    m_shadertoyUniformsVal.iTimeDelta = time_delta;
-    m_shadertoyUniformsVal.iFrameRate = frame_rate;
-    m_shadertoyUniformsVal.iFrame = frame;
-    m_shadertoyUniformsVal.iMouse[0] = mouse_x;
-    m_shadertoyUniformsVal.iMouse[1] = mouse_y;
-    m_shadertoyUniformsVal.iMouse[2] = mouse_z;
-    m_shadertoyUniformsVal.iMouse[3] = mouse_w;
+                           float mouseX,
+                           float mouseY,
+                           float mouseZ,
+                           float mouseW) {
+    mShadertoyUniformsVal.iTime = time;
+    mShadertoyUniformsVal.iTimeDelta = timeDelta;
+    mShadertoyUniformsVal.iFrameRate = frameRate;
+    mShadertoyUniformsVal.iFrame = frame;
+    mShadertoyUniformsVal.iMouse[0] = mouseX;
+    mShadertoyUniformsVal.iMouse[1] = mouseY;
+    mShadertoyUniformsVal.iMouse[2] = mouseZ;
+    mShadertoyUniformsVal.iMouse[3] = mouseW;
 }
 
-bool Renderer::UpdateShader(const std::string& wgsl_source) {
-    WGPUDevice device = m_context->GetDevice();
+bool Renderer::UpdateShader(const std::string& wgslSource) {
+    WGPUDevice device = mContext->GetDevice();
     if (!device) {
         return false;
     }
@@ -247,7 +240,7 @@ bool Renderer::UpdateShader(const std::string& wgsl_source) {
     WGPUShaderSourceWGSL wgslDesc = {};
     wgslDesc.chain.next = nullptr;
     wgslDesc.chain.sType = WGPUSType_ShaderSourceWGSL;
-    wgslDesc.code = {wgsl_source.c_str(), WGPU_STRLEN};
+    wgslDesc.code = {wgslSource.c_str(), WGPU_STRLEN};
     shaderModuleDesc.nextInChain = &wgslDesc.chain;
 
     WGPUShaderModule newShaderModule = wgpuDeviceCreateShaderModule(device, &shaderModuleDesc);
@@ -257,18 +250,18 @@ bool Renderer::UpdateShader(const std::string& wgsl_source) {
 }
 
 void Renderer::SetGeometryType(GeometryType type) {
-    m_geometryType = type;
+    mGeometryType = type;
 }
 
 void Renderer::SwapPipeline(WGPURenderPipeline newPipeline) {
-    if (m_renderPipeline) {
-        wgpuRenderPipelineRelease(m_renderPipeline);
+    if (mRenderPipeline) {
+        wgpuRenderPipelineRelease(mRenderPipeline);
     }
-    m_renderPipeline = newPipeline;
+    mRenderPipeline = newPipeline;
 }
 
 bool Renderer::CreatePipeline(WGPUShaderModule shaderModule, bool isAsync) {
-    WGPUDevice device = m_context->GetDevice();
+    WGPUDevice device = mContext->GetDevice();
 
     // Configure vertex attribute layouts matching Vertex struct
     WGPUVertexAttribute vertexAttributes[4] = {};
@@ -301,7 +294,7 @@ bool Renderer::CreatePipeline(WGPUShaderModule shaderModule, bool isAsync) {
 
     // Build color target state
     WGPUColorTargetState colorTarget = {};
-    colorTarget.format = m_context->GetSwapChainFormat();
+    colorTarget.format = mContext->GetSwapChainFormat();
     colorTarget.writeMask = WGPUColorWriteMask_All;
     colorTarget.blend = nullptr;  // standard blending disabled
 
@@ -324,7 +317,7 @@ bool Renderer::CreatePipeline(WGPUShaderModule shaderModule, bool isAsync) {
 
     WGPURenderPipelineDescriptor pipelineDesc = {};
     pipelineDesc.label = {"Renderer Render Pipeline", WGPU_STRLEN};
-    pipelineDesc.layout = m_pipelineLayout;
+    pipelineDesc.layout = mPipelineLayout;
 
     pipelineDesc.vertex.module = shaderModule;
     pipelineDesc.vertex.entryPoint = {"vs_main", WGPU_STRLEN};
@@ -378,67 +371,67 @@ bool Renderer::CreatePipeline(WGPUShaderModule shaderModule, bool isAsync) {
 }
 
 void Renderer::UpdateUniformBuffers() {
-    WGPUQueue queue = wgpuDeviceGetQueue(m_context->GetDevice());
+    WGPUQueue queue = wgpuDeviceGetQueue(mContext->GetDevice());
 
     // 1. Update Shadertoy Uniforms
-    m_shadertoyUniformsVal.iResolution[0] = static_cast<float>(m_context->GetWidth());
-    m_shadertoyUniformsVal.iResolution[1] = static_cast<float>(m_context->GetHeight());
-    m_shadertoyUniformsVal.iResolution[2] = 1.0f;
-    wgpuQueueWriteBuffer(queue, m_shadertoyUniformBuffer, 0, &m_shadertoyUniformsVal,
+    mShadertoyUniformsVal.iResolution[0] = static_cast<float>(mContext->GetWidth());
+    mShadertoyUniformsVal.iResolution[1] = static_cast<float>(mContext->GetHeight());
+    mShadertoyUniformsVal.iResolution[2] = 1.0f;
+    wgpuQueueWriteBuffer(queue, mShadertoyUniformBuffer, 0, &mShadertoyUniformsVal,
                          sizeof(ShadertoyUniforms));
 
     // 2. Update Camera Uniforms
-    if (m_geometryType == GeometryType::Quad) {
+    if (mGeometryType == GeometryType::Quad) {
         // Identity matrices for 2D screen space quad
-        Mat4 identity = Mat4::Identity();
-        memcpy(m_cameraUniformsVal.u_ViewProj, identity.m, 16 * sizeof(float));
-        memcpy(m_cameraUniformsVal.u_Model, identity.m, 16 * sizeof(float));
-        memcpy(m_cameraUniformsVal.u_NormalMatrix, identity.m, 16 * sizeof(float));
-        m_cameraUniformsVal.u_CameraPosition[0] = 0.0f;
-        m_cameraUniformsVal.u_CameraPosition[1] = 0.0f;
-        m_cameraUniformsVal.u_CameraPosition[2] = 1.0f;
+        Mat4 identity = Mat4Identity();
+        std::memcpy(mCameraUniformsVal.uViewProj, identity.m, 16 * sizeof(float));
+        std::memcpy(mCameraUniformsVal.uModel, identity.m, 16 * sizeof(float));
+        std::memcpy(mCameraUniformsVal.uNormalMatrix, identity.m, 16 * sizeof(float));
+        mCameraUniformsVal.uCameraPosition[0] = 0.0f;
+        mCameraUniformsVal.uCameraPosition[1] = 0.0f;
+        mCameraUniformsVal.uCameraPosition[2] = 1.0f;
     } else {
         // 3D camera matrices
         float aspect =
-            static_cast<float>(m_context->GetWidth()) / static_cast<float>(m_context->GetHeight());
+            static_cast<float>(mContext->GetWidth()) / static_cast<float>(mContext->GetHeight());
         Mat4 proj =
-            Mat4::Perspective(45.0f * static_cast<float>(M_PI) / 180.0f, aspect, 0.1f, 100.0f);
+            Mat4Perspective(45.0f * kPi / 180.0f, aspect, 0.1f, 100.0f);
 
         Vec3 cameraPos = {0.0f, 1.5f, 3.0f};
         Vec3 cameraTarget = {0.0f, 0.0f, 0.0f};
         Vec3 cameraUp = {0.0f, 1.0f, 0.0f};
-        Mat4 view = Mat4::LookAt(cameraPos, cameraTarget, cameraUp);
+        Mat4 view = Mat4LookAt(cameraPos, cameraTarget, cameraUp);
 
-        Mat4 viewProj = Mat4::Multiply(proj, view);
+        Mat4 viewProj = Mat4Multiply(proj, view);
 
         // Spin the 3D model over time to show interactivity
-        float rotationAngle = m_shadertoyUniformsVal.iTime * 0.5f;
+        float rotationAngle = mShadertoyUniformsVal.iTime * 0.5f;
         Mat4 model =
-            Mat4::Multiply(Mat4::RotationY(rotationAngle), Mat4::RotationX(rotationAngle * 0.3f));
+            Mat4Multiply(Mat4RotationY(rotationAngle), Mat4RotationX(rotationAngle * 0.3f));
 
-        Mat4 normalMatrix = Mat4::Transpose(Mat4::Inverse(model));
+        Mat4 normalMatrix = Mat4Transpose(Mat4Inverse(model));
 
-        memcpy(m_cameraUniformsVal.u_ViewProj, viewProj.m, 16 * sizeof(float));
-        memcpy(m_cameraUniformsVal.u_Model, model.m, 16 * sizeof(float));
-        memcpy(m_cameraUniformsVal.u_NormalMatrix, normalMatrix.m, 16 * sizeof(float));
+        std::memcpy(mCameraUniformsVal.uViewProj, viewProj.m, 16 * sizeof(float));
+        std::memcpy(mCameraUniformsVal.uModel, model.m, 16 * sizeof(float));
+        std::memcpy(mCameraUniformsVal.uNormalMatrix, normalMatrix.m, 16 * sizeof(float));
 
-        m_cameraUniformsVal.u_CameraPosition[0] = cameraPos.x;
-        m_cameraUniformsVal.u_CameraPosition[1] = cameraPos.y;
-        m_cameraUniformsVal.u_CameraPosition[2] = cameraPos.z;
+        mCameraUniformsVal.uCameraPosition[0] = cameraPos.x;
+        mCameraUniformsVal.uCameraPosition[1] = cameraPos.y;
+        mCameraUniformsVal.uCameraPosition[2] = cameraPos.z;
     }
 
-    wgpuQueueWriteBuffer(queue, m_cameraUniformBuffer, 0, &m_cameraUniformsVal,
+    wgpuQueueWriteBuffer(queue, mCameraUniformBuffer, 0, &mCameraUniformsVal,
                          sizeof(CameraUniforms));
     wgpuQueueRelease(queue);
 }
 
 void Renderer::Render() {
-    WGPUDevice device = m_context->GetDevice();
+    WGPUDevice device = mContext->GetDevice();
     WGPUQueue queue = wgpuDeviceGetQueue(device);
 
     UpdateUniformBuffers();
 
-    WGPUTextureView backBufferView = m_context->GetCurrentSwapChainView();
+    WGPUTextureView backBufferView = mContext->GetCurrentSwapChainView();
     if (!backBufferView) {
         wgpuQueueRelease(queue);
         return;
@@ -457,7 +450,7 @@ void Renderer::Render() {
     colorAttachment.clearValue = {0.1f, 0.1f, 0.12f, 1.0f};
 
     WGPURenderPassDepthStencilAttachment depthAttachment = {};
-    depthAttachment.view = m_depthTextureView;
+    depthAttachment.view = mDepthTextureView;
     depthAttachment.depthLoadOp = WGPULoadOp_Clear;
     depthAttachment.depthStoreOp = WGPUStoreOp_Store;
     depthAttachment.depthClearValue = 1.0f;
@@ -473,19 +466,19 @@ void Renderer::Render() {
 
     WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
 
-    if (m_renderPipeline) {
-        wgpuRenderPassEncoderSetPipeline(renderPass, m_renderPipeline);
-        wgpuRenderPassEncoderSetBindGroup(renderPass, 0, m_bindGroup, 0, nullptr);
+    if (mRenderPipeline) {
+        wgpuRenderPassEncoderSetPipeline(renderPass, mRenderPipeline);
+        wgpuRenderPassEncoderSetBindGroup(renderPass, 0, mBindGroup, 0, nullptr);
 
-        switch (m_geometryType) {
+        switch (mGeometryType) {
             case GeometryType::Quad:
-                m_quadMesh->Draw(renderPass);
+                mQuadMesh->Draw(renderPass);
                 break;
             case GeometryType::Cube:
-                m_cubeMesh->Draw(renderPass);
+                mCubeMesh->Draw(renderPass);
                 break;
             case GeometryType::Sphere:
-                m_sphereMesh->Draw(renderPass);
+                mSphereMesh->Draw(renderPass);
                 break;
         }
     }
@@ -505,28 +498,28 @@ void Renderer::Render() {
     wgpuTextureViewRelease(backBufferView);
     wgpuQueueRelease(queue);
 
-    m_context->Present();
+    mContext->Present();
 }
 
 void Renderer::Resize(uint32_t width, uint32_t height) {
-    if (m_context->CreateSwapChain(width, height)) {
+    if (mContext->CreateSwapChain(width, height)) {
         CreateDepthTexture();
     }
 }
 
 void Renderer::CreateDepthTexture() {
-    if (m_depthTextureView) {
-        wgpuTextureViewRelease(m_depthTextureView);
-        m_depthTextureView = nullptr;
+    if (mDepthTextureView) {
+        wgpuTextureViewRelease(mDepthTextureView);
+        mDepthTextureView = nullptr;
     }
-    if (m_depthTexture) {
-        wgpuTextureDestroy(m_depthTexture);
-        wgpuTextureRelease(m_depthTexture);
-        m_depthTexture = nullptr;
+    if (mDepthTexture) {
+        wgpuTextureDestroy(mDepthTexture);
+        wgpuTextureRelease(mDepthTexture);
+        mDepthTexture = nullptr;
     }
 
-    uint32_t width = m_context->GetWidth();
-    uint32_t height = m_context->GetHeight();
+    uint32_t width = mContext->GetWidth();
+    uint32_t height = mContext->GetHeight();
     if (width == 0) {
         width = 1;
     }
@@ -545,6 +538,6 @@ void Renderer::CreateDepthTexture() {
     depthDesc.viewFormatCount = 0;
     depthDesc.viewFormats = nullptr;
 
-    m_depthTexture = wgpuDeviceCreateTexture(m_context->GetDevice(), &depthDesc);
-    m_depthTextureView = wgpuTextureCreateView(m_depthTexture, nullptr);
+    mDepthTexture = wgpuDeviceCreateTexture(mContext->GetDevice(), &depthDesc);
+    mDepthTextureView = wgpuTextureCreateView(mDepthTexture, nullptr);
 }

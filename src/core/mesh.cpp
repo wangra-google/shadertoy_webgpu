@@ -1,29 +1,27 @@
 #include "core/mesh.h"
 
-#include <string.h>
-
 #include <cmath>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+namespace {
+constexpr float kPi = 3.14159265358979323846f;
+}  // namespace
 
 Mesh::Mesh(WGPUDevice device,
            const std::vector<Vertex>& vertices,
            const std::vector<uint32_t>& indices)
-    : m_device(device),
-      m_vertexCount(static_cast<uint32_t>(vertices.size())),
-      m_indexCount(static_cast<uint32_t>(indices.size())) {
+    : mDevice(device),
+      mVertexCount(static_cast<uint32_t>(vertices.size())),
+      mIndexCount(static_cast<uint32_t>(indices.size())) {
     // Create vertex buffer
     WGPUBufferDescriptor vertexBufferDesc = {};
     vertexBufferDesc.label = {"Vertex Buffer", WGPU_STRLEN};
     vertexBufferDesc.size = vertices.size() * sizeof(Vertex);
     vertexBufferDesc.usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst;
     vertexBufferDesc.mappedAtCreation = false;
-    m_vertexBuffer = wgpuDeviceCreateBuffer(device, &vertexBufferDesc);
+    mVertexBuffer = wgpuDeviceCreateBuffer(device, &vertexBufferDesc);
 
     WGPUQueue queue = wgpuDeviceGetQueue(device);
-    wgpuQueueWriteBuffer(queue, m_vertexBuffer, 0, vertices.data(), vertexBufferDesc.size);
+    wgpuQueueWriteBuffer(queue, mVertexBuffer, 0, vertices.data(), vertexBufferDesc.size);
 
     // Create index buffer
     WGPUBufferDescriptor indexBufferDesc = {};
@@ -31,32 +29,32 @@ Mesh::Mesh(WGPUDevice device,
     indexBufferDesc.size = indices.size() * sizeof(uint32_t);
     indexBufferDesc.usage = WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst;
     indexBufferDesc.mappedAtCreation = false;
-    m_indexBuffer = wgpuDeviceCreateBuffer(device, &indexBufferDesc);
+    mIndexBuffer = wgpuDeviceCreateBuffer(device, &indexBufferDesc);
 
-    wgpuQueueWriteBuffer(queue, m_indexBuffer, 0, indices.data(), indexBufferDesc.size);
+    wgpuQueueWriteBuffer(queue, mIndexBuffer, 0, indices.data(), indexBufferDesc.size);
     wgpuQueueRelease(queue);
 }
 
 Mesh::~Mesh() {
-    if (m_vertexBuffer) {
-        wgpuBufferDestroy(m_vertexBuffer);
-        wgpuBufferRelease(m_vertexBuffer);
+    if (mVertexBuffer) {
+        wgpuBufferDestroy(mVertexBuffer);
+        wgpuBufferRelease(mVertexBuffer);
     }
-    if (m_indexBuffer) {
-        wgpuBufferDestroy(m_indexBuffer);
-        wgpuBufferRelease(m_indexBuffer);
+    if (mIndexBuffer) {
+        wgpuBufferDestroy(mIndexBuffer);
+        wgpuBufferRelease(mIndexBuffer);
     }
 }
 
 void Mesh::Draw(WGPURenderPassEncoder renderPass) const {
-    wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, m_vertexBuffer, 0,
-                                         m_vertexCount * sizeof(Vertex));
-    wgpuRenderPassEncoderSetIndexBuffer(renderPass, m_indexBuffer, WGPUIndexFormat_Uint32, 0,
-                                        m_indexCount * sizeof(uint32_t));
-    wgpuRenderPassEncoderDrawIndexed(renderPass, m_indexCount, 1, 0, 0, 0);
+    wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, mVertexBuffer, 0,
+                                         mVertexCount * sizeof(Vertex));
+    wgpuRenderPassEncoderSetIndexBuffer(renderPass, mIndexBuffer, WGPUIndexFormat_Uint32, 0,
+                                        mIndexCount * sizeof(uint32_t));
+    wgpuRenderPassEncoderDrawIndexed(renderPass, mIndexCount, 1, 0, 0, 0);
 }
 
-Mesh* Mesh::CreateQuad(WGPUDevice device) {
+std::unique_ptr<Mesh> Mesh::CreateQuad(WGPUDevice device) {
     std::vector<Vertex> vertices = {
         // Pos, Norm, UV, Tangent
         {{-1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
@@ -67,10 +65,10 @@ Mesh* Mesh::CreateQuad(WGPUDevice device) {
 
     std::vector<uint32_t> indices = {0, 1, 2, 0, 2, 3};
 
-    return new Mesh(device, vertices, indices);
+    return std::make_unique<Mesh>(device, vertices, indices);
 }
 
-Mesh* Mesh::CreateCube(WGPUDevice device) {
+std::unique_ptr<Mesh> Mesh::CreateCube(WGPUDevice device) {
     // 6 faces * 4 vertices = 24 vertices
     std::vector<Vertex> vertices = {
         // Front face (+Z)
@@ -122,22 +120,22 @@ Mesh* Mesh::CreateCube(WGPUDevice device) {
                                      // Left
                                      20, 21, 22, 20, 22, 23};
 
-    return new Mesh(device, vertices, indices);
+    return std::make_unique<Mesh>(device, vertices, indices);
 }
 
-Mesh* Mesh::CreateSphere(WGPUDevice device, uint32_t subdivisions) {
+std::unique_ptr<Mesh> Mesh::CreateSphere(WGPUDevice device, uint32_t subdivisions) {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
 
     for (uint32_t lat = 0; lat <= subdivisions; ++lat) {
-        float theta = static_cast<float>(lat) * static_cast<float>(M_PI) / subdivisions;
-        float sinTheta = sin(theta);
-        float cosTheta = cos(theta);
+        float theta = static_cast<float>(lat) * kPi / subdivisions;
+        float sinTheta = std::sin(theta);
+        float cosTheta = std::cos(theta);
 
         for (uint32_t lon = 0; lon <= subdivisions; ++lon) {
-            float phi = static_cast<float>(lon) * 2.0f * static_cast<float>(M_PI) / subdivisions;
-            float sinPhi = sin(phi);
-            float cosPhi = cos(phi);
+            float phi = static_cast<float>(lon) * 2.0f * kPi / subdivisions;
+            float sinPhi = std::sin(phi);
+            float cosPhi = std::cos(phi);
 
             float x = cosPhi * sinTheta;
             float y = cosTheta;
@@ -182,5 +180,5 @@ Mesh* Mesh::CreateSphere(WGPUDevice device, uint32_t subdivisions) {
         }
     }
 
-    return new Mesh(device, vertices, indices);
+    return std::make_unique<Mesh>(device, vertices, indices);
 }

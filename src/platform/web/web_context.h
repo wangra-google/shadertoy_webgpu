@@ -1,7 +1,7 @@
-#ifndef WEB_CONTEXT_H
-#define WEB_CONTEXT_H
+#ifndef PLATFORM_WEB_WEB_CONTEXT_H_
+#define PLATFORM_WEB_WEB_CONTEXT_H_
 
-#include <stdint.h>
+#include <cstdint>
 #include <webgpu/webgpu.h>
 
 #include <string>
@@ -11,34 +11,34 @@
 
 class WebContext : public GraphicsContext {
   public:
-    WebContext(const std::string& canvasSelector);
+    WebContext(const std::string& canvasSelector, uint32_t width, uint32_t height);
     ~WebContext() override;
 
     bool Init() override;
     bool CreateSwapChain(uint32_t width, uint32_t height) override;
 
-    WGPUDevice GetDevice() const override { return m_device; }
-    WGPUQueue GetQueue() const override { return m_queue; }
-    WGPUSurface GetSurface() const override { return m_surface; }
-    WGPUTextureFormat GetSwapChainFormat() const override { return m_swapChainFormat; }
+    WGPUDevice GetDevice() const override { return mDevice; }
+    WGPUQueue GetQueue() const override { return mQueue; }
+    WGPUSurface GetSurface() const override { return mSurface; }
+    WGPUTextureFormat GetSwapChainFormat() const override { return mSwapChainFormat; }
 
     WGPUTextureView GetCurrentSwapChainView() override;
     void Present() override;
 
-    uint32_t GetWidth() const override { return m_width; }
-    uint32_t GetHeight() const override { return m_height; }
+    uint32_t GetWidth() const override { return mWidth; }
+    uint32_t GetHeight() const override { return mHeight; }
 
   private:
-    std::string m_canvasSelector;
-    uint32_t m_width = config::kWebDefaultWidth;
-    uint32_t m_height = config::kWebDefaultHeight;
+    std::string mCanvasSelector;
+    uint32_t mWidth = config::kWebDefaultWidth;
+    uint32_t mHeight = config::kWebDefaultHeight;
 
-    WGPUInstance m_instance = nullptr;
-    WGPUSurface m_surface = nullptr;
-    WGPUAdapter m_adapter = nullptr;
-    WGPUDevice m_device = nullptr;
-    WGPUQueue m_queue = nullptr;
-    WGPUTextureFormat m_swapChainFormat = WGPUTextureFormat_RGBA8Unorm;
+    WGPUInstance mInstance = nullptr;
+    WGPUSurface mSurface = nullptr;
+    WGPUAdapter mAdapter = nullptr;
+    WGPUDevice mDevice = nullptr;
+    WGPUQueue mQueue = nullptr;
+    WGPUTextureFormat mSwapChainFormat = WGPUTextureFormat_RGBA8Unorm;
 };
 
-#endif  // WEB_CONTEXT_H
+#endif  // PLATFORM_WEB_WEB_CONTEXT_H_

@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <memory>
 #include <thread>
 
 #include "core/config.h"
@@ -55,22 +56,19 @@ int main(int argc, char* argv[]) {
     const uint32_t initialWidth = config::kNativeWindowWidth;
     const uint32_t initialHeight = config::kNativeWindowHeight;
 
-    auto* context = new NativeContext(initialWidth, initialHeight);
+    auto context = std::make_unique<NativeContext>(initialWidth, initialHeight);
     if (!context->Init()) {
         std::cerr << "Initialization of Native Context failed!" << std::endl;
-        delete context;
         return -1;
     }
 
-    auto* renderer = new Renderer(context);
+    auto renderer = std::make_unique<Renderer>(context.get());
     if (!renderer->Init()) {
         std::cerr << "Initialization of Renderer failed!" << std::endl;
-        delete renderer;
-        delete context;
         return -1;
     }
 
-    AppState appState = {context, renderer};
+    AppState appState = {context.get(), renderer.get()};
     glfwSetWindowUserPointer(context->GetWindow(), &appState);
     glfwSetFramebufferSizeCallback(context->GetWindow(), OnFramebufferResize);
     glfwSetKeyCallback(context->GetWindow(), OnKey);
@@ -126,8 +124,6 @@ int main(int argc, char* argv[]) {
 
     // Cleanup resources
     glfwSetWindowUserPointer(context->GetWindow(), nullptr);
-    delete renderer;
-    delete context;
 
     std::cout << "Application exited successfully." << std::endl;
     return 0;

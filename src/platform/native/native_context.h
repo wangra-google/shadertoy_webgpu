@@ -1,7 +1,7 @@
-#ifndef NATIVE_CONTEXT_H
-#define NATIVE_CONTEXT_H
+#ifndef PLATFORM_NATIVE_NATIVE_CONTEXT_H_
+#define PLATFORM_NATIVE_NATIVE_CONTEXT_H_
 
-#include <stdint.h>
+#include <cstdint>
 #include <webgpu/webgpu.h>
 
 #include "core/graphics_context.h"
@@ -16,36 +16,36 @@ class NativeContext : public GraphicsContext {
     bool Init() override;
     bool CreateSwapChain(uint32_t width, uint32_t height) override;
 
-    WGPUDevice GetDevice() const override { return m_device; }
-    WGPUQueue GetQueue() const override { return m_queue; }
-    WGPUSurface GetSurface() const override { return m_surface; }
-    WGPUTextureFormat GetSwapChainFormat() const override { return m_swapChainFormat; }
+    WGPUDevice GetDevice() const override { return mDevice; }
+    WGPUQueue GetQueue() const override { return mQueue; }
+    WGPUSurface GetSurface() const override { return mSurface; }
+    WGPUTextureFormat GetSwapChainFormat() const override { return mSwapChainFormat; }
 
     WGPUTextureView GetCurrentSwapChainView() override;
     void Present() override;
 
-    uint32_t GetWidth() const override { return m_width; }
-    uint32_t GetHeight() const override { return m_height; }
+    uint32_t GetWidth() const override { return mWidth; }
+    uint32_t GetHeight() const override { return mHeight; }
 
-    GLFWwindow* GetWindow() const { return m_window; }
+    GLFWwindow* GetWindow() const { return mWindow; }
     bool ShouldClose() const;
     void PollEvents();
 
-    bool IsTimestampsSupported() const { return m_timestampsSupported; }
+    bool IsTimestampsSupported() const { return mTimestampsSupported; }
 
   private:
-    uint32_t m_width = 0;
-    uint32_t m_height = 0;
-    GLFWwindow* m_window = nullptr;
+    uint32_t mWidth = 0;
+    uint32_t mHeight = 0;
+    GLFWwindow* mWindow = nullptr;
 
-    WGPUInstance m_instance = nullptr;
-    WGPUSurface m_surface = nullptr;
-    WGPUAdapter m_adapter = nullptr;
-    WGPUDevice m_device = nullptr;
-    WGPUQueue m_queue = nullptr;
-    WGPUTextureFormat m_swapChainFormat = WGPUTextureFormat_BGRA8Unorm;
+    WGPUInstance mInstance = nullptr;
+    WGPUSurface mSurface = nullptr;
+    WGPUAdapter mAdapter = nullptr;
+    WGPUDevice mDevice = nullptr;
+    WGPUQueue mQueue = nullptr;
+    WGPUTextureFormat mSwapChainFormat = WGPUTextureFormat_BGRA8Unorm;
 
-    bool m_timestampsSupported = false;
+    bool mTimestampsSupported = false;
 };
 
-#endif  // NATIVE_CONTEXT_H
+#endif  // PLATFORM_NATIVE_NATIVE_CONTEXT_H_

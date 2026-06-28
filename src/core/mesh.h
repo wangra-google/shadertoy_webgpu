@@ -1,9 +1,10 @@
-#ifndef MESH_H
-#define MESH_H
+#ifndef CORE_MESH_H_
+#define CORE_MESH_H_
 
-#include <stdint.h>
+#include <cstdint>
 #include <webgpu/webgpu.h>
 
+#include <memory>
 #include <vector>
 
 struct Vertex {
@@ -22,18 +23,18 @@ class Mesh {
 
     void Draw(WGPURenderPassEncoder renderPass) const;
 
-    uint32_t GetIndexCount() const { return m_indexCount; }
+    uint32_t GetIndexCount() const { return mIndexCount; }
 
-    static Mesh* CreateQuad(WGPUDevice device);
-    static Mesh* CreateCube(WGPUDevice device);
-    static Mesh* CreateSphere(WGPUDevice device, uint32_t subdivisions = 32);
+    static std::unique_ptr<Mesh> CreateQuad(WGPUDevice device);
+    static std::unique_ptr<Mesh> CreateCube(WGPUDevice device);
+    static std::unique_ptr<Mesh> CreateSphere(WGPUDevice device, uint32_t subdivisions = 32);
 
   private:
-    WGPUDevice m_device = nullptr;
-    WGPUBuffer m_vertexBuffer = nullptr;
-    WGPUBuffer m_indexBuffer = nullptr;
-    uint32_t m_vertexCount = 0;
-    uint32_t m_indexCount = 0;
+    WGPUDevice mDevice = nullptr;
+    WGPUBuffer mVertexBuffer = nullptr;
+    WGPUBuffer mIndexBuffer = nullptr;
+    uint32_t mVertexCount = 0;
+    uint32_t mIndexCount = 0;
 };
 
-#endif  // MESH_H
+#endif  // CORE_MESH_H_

@@ -266,14 +266,17 @@
                 // Instantiate the EngineCore class exported via Embind
                 engine = new Module.EngineCore("#canvas");
 
+                const canvas = document.getElementById("canvas");
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+
                 // Initialize the engine (this configures the WebGPU canvas, adapter, and device)
-                if (!engine.initialize()) {
+                if (!engine.initialize(canvas.width, canvas.height)) {
                     showError("WebGPU initialization failed. Make sure your browser supports WebGPU and it is enabled.");
                     return;
                 }
 
                 // Handle canvas resizing
-                const canvas = document.getElementById("canvas");
                 const resizeCanvas = () => {
                     // Fit canvas to window size
                     const width = window.innerWidth;
@@ -283,7 +286,6 @@
                     engine.resize(width, height);
                 };
                 window.addEventListener("resize", resizeCanvas);
-                resizeCanvas(); // Trigger initial resize
 
                 // Setup frame rendering loop
                 const startTime = performance.now();
