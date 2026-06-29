@@ -578,11 +578,19 @@ This section enumerates every configuration, source, header, scripting, and layo
 * Wire the compiler pipeline so that GLSL entered by the user is wrapped, compiled to WGSL, and loaded into the C++ core renderer.
 
 ### Phase 3: Web UI (TypeScript / React) & Code Editor (Shadertoy Replica)
-* Scaffold Vite + React (TypeScript) frontend.
-* Implement CodeMirror/Monaco editor with syntax highlighting for WGSL and GLSL.
-* Build side-by-side "Source Editor" and "Canvas Viewport" panels.
-* **Diagnostic Interface**: Implement log overlay panels, error lint markers, compile play button, and `Alt+Enter` key listener to dynamically update the running shader.
-* Achieve a working, single-pass Shadertoy replica in the browser.
+* **Phase 3.1: Core WGSL Dashboard**
+  * Scaffold Vite + React (TypeScript) frontend.
+  * Integrate modularized C++ WebAssembly engine with lifecycle memory cleanup and High-DPI (`devicePixelRatio`) rendering.
+  * Implement CodeMirror 6 editor with syntax highlighting for WGSL (via Rust extension fallback).
+  * Build side-by-side "Source Editor" and "Canvas Viewport" panels.
+  * **Diagnostic Interface**: Implement log overlay panels, error lint markers, compile play button with true asynchronous compilation feedback (JS-to-C++ callbacks), and `Alt+Enter` key listener to dynamically update the running shader.
+  * Support mouse coordinate capture and upload (`iMouse` uniform binding).
+
+* **Phase 3.2: Browser-Side GLSL Compilation**
+  * Integrate `@webgpu/glslang` and `twgsl` (from public registry) into the React frontend compiler manager.
+  * Update `copy-wasm.js` to automatically copy `twgsl.js`/`twgsl.wasm` to the public folder.
+  * Implement GLSL syntax highlighting in CodeMirror (via C++ extension).
+  * Compile GLSL entered by the user to SPIR-V via `glslang`, translate SPIR-V to WGSL via `twgsl`, and upload the translated WGSL code to the C++ core.
 
 ### Phase 4: Texture Manager & Multi-Pass (Buffer A..D)
 * Implement the multi-pass pipeline runner supporting offscreen render targets.
