@@ -558,9 +558,13 @@ bool Renderer::CreatePipeline(RenderPass& pass, WGPUShaderModule newModule, Shad
             this, pass.name, newModule, stage, compilationId, vertexEntryPoint, fragmentEntryPoint, mIsAlive, callback};
 
         WGPUCreateRenderPipelineAsyncCallbackInfo callbackInfo = {};
-        // Use AllowProcessEvents to ensure the callback runs on the main thread during tick/processEvents,
-        // which eliminates threading race conditions with the Renderer lifecycle.
+#ifdef __EMSCRIPTEN__
+        // On Web, JS is single-threaded so AllowSpontaneous is safe and doesn't require manual event ticking.
+        callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+#else
+        // On Native, use AllowProcessEvents to run callbacks on the main thread and avoid background thread races.
         callbackInfo.mode = WGPUCallbackMode_AllowProcessEvents;
+#endif
         callbackInfo.callback = [](WGPUCreatePipelineAsyncStatus status,
                                    WGPURenderPipeline pipeline, WGPUStringView message,
                                    void* userdata1, void* userdata2) {

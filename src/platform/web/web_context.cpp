@@ -114,20 +114,6 @@ bool WebContext::Init() {
      };
      deviceDesc.uncapturedErrorCallbackInfo.userdata1 = nullptr;
 
-     // Setup device lost callback
-     deviceDesc.deviceLostCallbackInfo.callback = [](WGPUDevice const* device,
-                                                      WGPUDeviceLostReason reason, WGPUStringView message,
-                                                      void* userdata1, void* userdata2) {
-         std::cerr << "WebGPU Device Lost (Reason " << reason << "): ";
-         if (message.data && message.length > 0) {
-             std::cerr.write(message.data, message.length);
-         } else {
-             std::cerr << "Unknown reason";
-         }
-         std::cerr << std::endl;
-     };
-     deviceDesc.deviceLostCallbackInfo.userdata1 = nullptr;
-
     struct DeviceRequestResult {
         WGPUDevice device = nullptr;
         bool completed = false;

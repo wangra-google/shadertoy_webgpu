@@ -33,6 +33,7 @@ layout(set = 1, binding = 4) uniform texture2D iChannel3;
 // Macro mapping WebGL-style sampler2D access to Vulkan/WebGPU separate texture/sampler bindings,
 // and automatically flipping the Y coordinate to match Shadertoy's Y-up texture space.
 #define texture(tex, uv_coord) texture(sampler2D(tex, s_sampler), vec2((uv_coord).x, 1.0 - (uv_coord).y))
+#define textureLod(tex, uv_coord, lod) textureLod(sampler2D(tex, s_sampler), vec2((uv_coord).x, 1.0 - (uv_coord).y), lod)
 
 // User entry point declaration
 void mainImage(out vec4 fragColor, in vec2 fragCoord);
