@@ -215,6 +215,12 @@ export default function App() {
   const [isCompiling, setIsCompiling] = useState(false);
   const [compilerReady, setCompilerReady] = useState(false);
   const [resetTrigger, setResetTrigger] = useState(0);
+  const [showWgsl, setShowWgsl] = useState(false);
+  const showWgslRef = useRef(false);
+
+  useEffect(() => {
+    showWgslRef.current = showWgsl;
+  }, [showWgsl]);
   
   const engineRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -356,7 +362,29 @@ export default function App() {
         addLog(`Compiler initialization failed: ${err.message || err}`, "error");
       });
 
+    const isDiscardingWgslRef = { current: false };
+
     (window as any).onWasmLog = (text: string, type: 'info' | 'warning' | 'error') => {
+      if (text.startsWith("=== WGSL SOURCE FOR")) {
+        isDiscardingWgslRef.current = true;
+        if (showWgslRef.current) {
+          addLog(text, type);
+        }
+        return;
+      }
+      
+      if (text.startsWith("=====================")) {
+        isDiscardingWgslRef.current = false;
+        if (showWgslRef.current) {
+          addLog(text, type);
+        }
+        return;
+      }
+      
+      if (isDiscardingWgslRef.current && !showWgslRef.current) {
+        return;
+      }
+
       addLog(text, type);
     };
 
@@ -767,6 +795,8 @@ export default function App() {
             <Diagnostics
               logs={logs}
               onClear={() => setLogs([])}
+              showWgsl={showWgsl}
+              onToggleShowWgsl={setShowWgsl}
             />
           </div>
         </div>

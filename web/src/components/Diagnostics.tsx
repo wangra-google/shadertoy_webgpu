@@ -10,10 +10,18 @@ export interface LogMessage {
 interface DiagnosticsProps {
   logs: LogMessage[];
   onClear: () => void;
+  showWgsl: boolean;
+  onToggleShowWgsl: (val: boolean) => void;
 }
 
-export const Diagnostics: React.FC<DiagnosticsProps> = ({ logs, onClear }) => {
+export const Diagnostics: React.FC<DiagnosticsProps> = ({ 
+  logs, 
+  onClear,
+  showWgsl,
+  onToggleShowWgsl
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = React.useState(false);
 
   // Auto-scroll to bottom on new logs
   useEffect(() => {
@@ -88,23 +96,106 @@ export const Diagnostics: React.FC<DiagnosticsProps> = ({ logs, onClear }) => {
             </span>
           )}
         </div>
-        <button
-          onClick={onClear}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--text-muted)',
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {/* Show WGSL Checkbox */}
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
             fontSize: '0.8rem',
+            color: 'var(--text-secondary)',
             cursor: 'pointer',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            transition: 'all 0.2s'
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
-        >
-          Clear Console
-        </button>
+            userSelect: 'none'
+          }}>
+            <input 
+              type="checkbox"
+              checked={showWgsl}
+              onChange={(e) => onToggleShowWgsl(e.target.checked)}
+              style={{
+                cursor: 'pointer',
+                accentColor: 'var(--color-info)'
+              }}
+            />
+            Show WGSL
+          </label>
+
+          {/* Copy Logs Button */}
+          <button
+            onClick={() => {
+              const text = logs.map(log => `[${formatTime(log.timestamp)}] ${log.text}`).join('\n');
+              if (navigator.clipboard) {
+                navigator.clipboard.writeText(text)
+                  .then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  })
+                  .catch(err => console.error('Failed to copy logs:', err));
+              } else {
+                // Fallback for non-secure HTTP contexts
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                // Position off-screen to avoid layout disruption
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-999999px';
+                textArea.style.top = '-999999px';
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                  const successful = document.execCommand('copy');
+                  if (successful) {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  } else {
+                    console.error('Fallback copy command was unsuccessful');
+                  }
+                } catch (err) {
+                  console.error('Fallback copy failed:', err);
+                }
+                document.body.removeChild(textArea);
+              }
+            }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: copied ? 'var(--color-success, #10b981)' : 'var(--text-muted)',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              transition: 'all 0.2s',
+              fontWeight: copied ? 600 : 400
+            }}
+            onMouseEnter={(e) => {
+              if (!copied) e.currentTarget.style.color = '#fff';
+            }}
+            onMouseLeave={(e) => {
+              if (!copied) e.currentTarget.style.color = 'var(--text-muted)';
+            }}
+          >
+            {copied ? 'Copied!' : 'Copy Logs'}
+          </button>
+
+          {/* Clear Console Button */}
+          <button
+            onClick={onClear}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-muted)',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+          >
+            Clear Console
+          </button>
+        </div>
       </div>
 
       {/* Logs View */}
