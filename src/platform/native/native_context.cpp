@@ -307,4 +307,7 @@ bool NativeContext::ShouldClose() const {
 
 void NativeContext::PollEvents() {
     glfwPollEvents();
+    if (mInstance) {
+        wgpuInstanceProcessEvents(mInstance);
+    }
 }

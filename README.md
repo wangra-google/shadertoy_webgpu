@@ -82,6 +82,21 @@ You can build the project via the command line, or generate a Visual Studio 2022
    ./build/shadertoy_webgpu_native
    ```
 
+### Running with Custom Shaders (Command Line)
+You can load a custom shader file directly on startup by passing the file path as a command-line argument. The application will automatically detect the language based on the file extension and compile it:
+*   **WGSL Shaders** (`.wgsl` extension): The shader is loaded directly. The entry point (e.g. `@fragment fn ...`) is parsed automatically.
+*   **GLSL Shaders** (`.glsl`, `.frag`, `.vert`, etc.): The shader is treated as a Shadertoy-style GLSL shader. It is wrapped in the compatibility header and compiled to WGSL.
+
+```bash
+# Load a custom GLSL shader
+build\Release\shadertoy_webgpu_native.exe samples\glsl\iq_primitives.glsl
+
+# Load a custom WGSL shader
+build\Release\shadertoy_webgpu_native.exe path\to\shader.wgsl
+```
+
+If the shader fails to compile, the detailed compilation errors are printed to `stderr` and the application exits immediately with code `-1`.
+
 ---
 
 ## 3. Building the WebAssembly (HTML5) Target

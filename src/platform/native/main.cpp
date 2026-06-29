@@ -12,6 +12,41 @@
 #include <glslang/Public/ShaderLang.h>
 #include <tint/tint.h>
 
+#include <fstream>
+#include <sstream>
+#include <regex>
+
+std::string ReadFile(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        return "";
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
+std::string GetFileExtension(const std::string& path) {
+    size_t lastSlash = path.find_last_of("/\\");
+    size_t dotIndex = path.find_last_of(".");
+    if (dotIndex == std::string::npos || (lastSlash != std::string::npos && dotIndex < lastSlash)) {
+        return "";
+    }
+    return path.substr(dotIndex + 1);
+}
+
+std::string FindWgslEntryPoint(const std::string& wgslCode, const std::string& stage) {
+    // Strip comments
+    std::string cleanCode = std::regex_replace(wgslCode, std::regex(R"(/\*[\s\S]*?\*/|//.*)"), "");
+    
+    std::regex re("@" + stage + "\\s+fn\\s+(\\w+)");
+    std::smatch match;
+    if (std::regex_search(cleanCode, match, re) && match.size() > 1) {
+        return match.str(1);
+    }
+    return "main";
+}
+
 struct AppState {
     NativeContext* context;
     Renderer* renderer;
@@ -76,6 +111,61 @@ int main(int argc, char* argv[]) {
     if (!renderer->Init()) {
         std::cerr << "Initialization of Renderer failed!" << std::endl;
         return -1;
+    }
+
+    // Check for shader file passed via command-line
+    std::string shaderPath = "";
+    if (argc > 1) {
+        shaderPath = argv[1];
+    }
+
+    if (!shaderPath.empty()) {
+        std::string shaderSource = ReadFile(shaderPath);
+        if (shaderSource.empty()) {
+            std::cerr << "Failed to read shader file: " << shaderPath << std::endl;
+            return -1;
+        }
+
+        std::string ext = GetFileExtension(shaderPath);
+        std::string language = (ext == "wgsl") ? "wgsl" : "glsl";
+        
+        std::string entryPoint = "main";
+        if (language == "wgsl") {
+            entryPoint = FindWgslEntryPoint(shaderSource, "fragment");
+        }
+
+        std::cout << "Loading custom shader from: " << shaderPath << " (" << language << ", entry: " << entryPoint << ")" << std::endl;
+        
+        bool compileFinished = false;
+        bool compileSuccess = false;
+
+        renderer->UpdateShader(
+            shaderSource, 
+            language, 
+            ShaderStage::Fragment, 
+            entryPoint, 
+            /*isShadertoy=*/(language == "glsl"),
+            [&compileFinished, &compileSuccess](bool success, const std::string& errorMsg) {
+                compileFinished = true;
+                compileSuccess = success;
+                if (success) {
+                    std::cout << "Custom shader compiled and loaded successfully." << std::endl;
+                } else {
+                    std::cerr << "Custom shader compilation failed:\n" << errorMsg << std::endl;
+                }
+            }
+        );
+
+        // Wait for the async pipeline compilation to finish
+        while (!compileFinished && !context->ShouldClose()) {
+            context->PollEvents();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        if (!compileSuccess) {
+            std::cerr << "Exiting due to shader compilation failure." << std::endl;
+            return -1;
+        }
     }
 
     AppState appState = {context.get(), renderer.get()};
