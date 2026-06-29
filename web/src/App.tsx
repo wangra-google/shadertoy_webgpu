@@ -100,8 +100,83 @@ export default function App() {
   const [compilerReady, setCompilerReady] = useState(false);
   
   const engineRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
+
+  const importShaderFile = (file: File) => {
+    const fileName = file.name;
+    const extension = fileName.split('.').pop()?.toLowerCase();
+
+    if (extension === 'glsl' || extension === 'txt' || extension === 'wgsl') {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        if (content) {
+          setCode(content);
+          
+          // Auto-detect language based on file extension or heuristics
+          let targetLang: 'glsl' | 'wgsl' = language;
+          if (extension === 'wgsl') {
+            targetLang = 'wgsl';
+            setLanguage('wgsl');
+            addLog(`Imported WGSL shader from ${fileName}`, "info");
+          } else if (extension === 'glsl') {
+            targetLang = 'glsl';
+            setLanguage('glsl');
+            addLog(`Imported GLSL shader from ${fileName}`, "info");
+          } else if (extension === 'txt') {
+            targetLang = detectLanguage(content);
+            setLanguage(targetLang);
+            addLog(`Imported .txt file. Auto-detected language as ${targetLang.toUpperCase()}`, "info");
+          } else {
+            addLog(`Imported shader from ${fileName}`, "info");
+          }
+
+          // Compile immediately with the new content and target language
+          handleCompile(content, targetLang);
+        }
+      };
+      reader.readAsText(file);
+    } else {
+      addLog(`Unsupported file type: .${extension}. Please select a .glsl, .wgsl, or .txt file.`, "error");
+    }
+  };
+
+  const handleLoadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      importShaderFile(files[0]);
+      // Reset the value so the same file can be selected again
+      e.target.value = '';
+    }
+  };
+
+  const handleSaveClick = () => {
+    try {
+      const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `shader.${language}`;
+      
+      document.body.appendChild(a);
+      a.click();
+      
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      addLog(`Saved current shader as shader.${language}`, "info");
+    } catch (err: any) {
+      console.error("Failed to save file:", err);
+      addLog(`Failed to save shader file: ${err.message || err}`, "error");
+    }
+  };
 
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
@@ -134,43 +209,7 @@ export default function App() {
 
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
-      const file = files[0];
-      const fileName = file.name;
-      const extension = fileName.split('.').pop()?.toLowerCase();
-
-      if (extension === 'glsl' || extension === 'txt' || extension === 'wgsl') {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const content = event.target?.result as string;
-          if (content) {
-            setCode(content);
-            
-            // Auto-detect language based on file extension or heuristics
-            let targetLang: 'glsl' | 'wgsl' = language;
-            if (extension === 'wgsl') {
-              targetLang = 'wgsl';
-              setLanguage('wgsl');
-              addLog(`Imported WGSL shader from ${fileName}`, "info");
-            } else if (extension === 'glsl') {
-              targetLang = 'glsl';
-              setLanguage('glsl');
-              addLog(`Imported GLSL shader from ${fileName}`, "info");
-            } else if (extension === 'txt') {
-              targetLang = detectLanguage(content);
-              setLanguage(targetLang);
-              addLog(`Imported .txt file. Auto-detected language as ${targetLang.toUpperCase()}`, "info");
-            } else {
-              addLog(`Imported shader from ${fileName}`, "info");
-            }
-
-            // Compile immediately with the new content and target language
-            handleCompile(content, targetLang);
-          }
-        };
-        reader.readAsText(file);
-      } else {
-        addLog(`Unsupported file type: .${extension}. Please drop a .glsl, .wgsl, or .txt file.`, "error");
-      }
+      importShaderFile(files[0]);
     }
   };
 
@@ -360,8 +399,93 @@ export default function App() {
           </div>
         </div>
 
-        {/* Header Status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        {/* Header Status & Toolbar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          {/* File Operations */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* Load Button */}
+            <button
+              onClick={handleLoadClick}
+              title="Load Shader from File (.glsl, .wgsl, .txt)"
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-secondary)',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                e.currentTarget.style.color = '#fff';
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+                e.currentTarget.style.borderColor = 'var(--border)';
+              }}
+            >
+              <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              Load File
+            </button>
+
+            {/* Hidden Input for File Picker */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept=".glsl,.wgsl,.txt"
+              style={{ display: 'none' }}
+            />
+
+            {/* Save Button */}
+            <button
+              onClick={handleSaveClick}
+              title="Save Current Shader to File"
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-secondary)',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                e.currentTarget.style.color = '#fff';
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+                e.currentTarget.style.borderColor = 'var(--border)';
+              }}
+            >
+              <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Save File
+            </button>
+          </div>
+
+          <div style={{ height: '20px', width: '1px', background: 'var(--border)' }} />
+
+          {/* Engine Status */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem' }}>
             <span style={{
               width: '8px',
