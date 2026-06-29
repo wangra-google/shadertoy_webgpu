@@ -113,7 +113,7 @@ int main(int argc, char* argv[]) {
         double mouseX = 0.0, mouseY = 0.0;
         glfwGetCursorPos(context->GetWindow(), &mouseX, &mouseY);
         float mouseXF = static_cast<float>(mouseX);
-        float mouseYF = static_cast<float>(mouseY);
+        float mouseYF = static_cast<float>(context->GetHeight()) - static_cast<float>(mouseY);
 
         bool isMouseDown =
             glfwGetMouseButton(context->GetWindow(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;

@@ -1,5 +1,4 @@
-import glslangInit from '@webgpu/glslang';
-import twgslInit from 'twgsl';
+import glslangInit from '@webgpu/glslang/dist/web-devel/glslang.js';
 
 interface Glslang {
   compileGLSL(source: string, stage: string, genDebug: boolean): Uint32Array;
@@ -26,13 +25,25 @@ export function initCompiler(glslangWasmPath?: string, twgslWasmPath?: string): 
     const glslangOptions = glslangWasmPath ? { locateFile: () => glslangWasmPath } : undefined;
     const twgslOptions = twgslWasmPath ? { locateFile: () => twgslWasmPath } : undefined;
 
-    const [glslangModule, twgslModule] = await Promise.all([
-      (glslangInit as any)(glslangOptions),
-      (twgslInit as any)(twgslOptions),
-    ]);
-
+    // 1. Initialize glslang (always available)
+    const glslangModule = await (glslangInit as any)(glslangOptions);
+    console.log("glslangModule resolved to:", glslangModule);
     glslang = glslangModule as Glslang;
-    twgsl = twgslModule as Twgsl;
+    console.log("glslang is now:", glslang);
+
+    // 2. Initialize twgsl (optional, from window.twgsl if loaded via script)
+    const globalTwgslInit = (window as any).twgsl;
+    if (globalTwgslInit) {
+      try {
+        const twgslModule = await globalTwgslInit(twgslOptions);
+        twgsl = twgslModule as Twgsl;
+        console.log("twgsl initialized successfully.");
+      } catch (err) {
+        console.warn("Failed to initialize twgsl:", err);
+      }
+    } else {
+      console.warn("twgsl is not available. GLSL-to-WGSL translation will be disabled.");
+    }
   })();
 
   return initPromise;

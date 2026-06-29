@@ -56,6 +56,8 @@ if(EMSCRIPTEN)
         "-sALLOW_MEMORY_GROWTH=1"
         "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']"
         "-sASYNCIFY=1"
+        "-sMODULARIZE=1"
+        "-sEXPORT_NAME=createEngineModule"
     )
 
     # Copy index.html to the build directory
@@ -63,6 +65,18 @@ if(EMSCRIPTEN)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/web/index.html
         ${CMAKE_CURRENT_BINARY_DIR}/index.html
         COPYONLY
+    )
+
+    # Post-build step to copy WASM binaries directly to the React public folder
+    add_custom_command(TARGET engine_wasm POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/web/public
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE_DIR:engine_wasm>/engine_wasm.js
+            ${CMAKE_CURRENT_SOURCE_DIR}/web/public/engine_wasm.js
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE_DIR:engine_wasm>/engine_wasm.wasm
+            ${CMAKE_CURRENT_SOURCE_DIR}/web/public/engine_wasm.wasm
+        COMMENT "Copying WebAssembly binaries to React public folder..."
     )
 
 else()

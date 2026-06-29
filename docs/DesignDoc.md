@@ -116,22 +116,26 @@ This bind group contains global parameters updated per frame.
 
 ```wgsl
 struct ShadertoyUniforms {
+    // std140 packing: iResolution (12B) + iTime (4B) = 16B (aligned)
     iResolution : vec3<f32>,
     iTime       : f32,
+    
+    // std140 packing: iTimeDelta (4B) + iFrameRate (4B) + iFrame (4B) + pad0 (4B) = 16B (aligned)
     iTimeDelta  : f32,
     iFrameRate  : f32,
-    iFrame      : u32,
-    _pad0       : u32,     // 4-byte padding to align vec4 alignment
+    iFrame      : i32,
+    pad0        : u32,
+    
     iMouse      : vec4<f32>,
     iDate       : vec4<f32>,
 };
 
 struct CameraUniforms {
-    u_ViewProj       : mat4x4<f32>,
-    u_Model          : mat4x4<f32>,
-    u_NormalMatrix   : mat4x4<f32>,
-    u_CameraPosition : vec3<f32>,
-    _pad1            : f32,     // Padding to align to 16-byte boundary
+    uViewProj       : mat4x4<f32>,
+    uModel          : mat4x4<f32>,
+    uNormalMatrix   : mat4x4<f32>,
+    uCameraPosition : vec3<f32>,
+    padding         : f32,     // Padding to align to 16-byte boundary
 };
 
 @group(0) @binding(0) var<uniform> u_shadertoy : ShadertoyUniforms;
@@ -158,7 +162,7 @@ struct Particle {
     velocity : vec4<f32>,
 };
 
-@group(2) @binding(0) var<storage, read_write> u_particles : array<Particle>;
+@group(2) @binding(0) var<storage, read_write> sParticles : array<Particle>;
 ```
 
 ### 3. Pipeline Output Resources (Render Targets)
@@ -307,7 +311,7 @@ Both targets compile through the **exact same Khronos glslang and Google Tint co
       float iTimeDelta;
       float iFrameRate;
       int32_t iFrame;
-      uint32_t _pad0;       // Explicit 4-byte padding to align iMouse to 16-byte boundary
+      uint32_t pad0;        // Explicit 4-byte padding to align iMouse to 16-byte boundary
       float iMouse[4];      // vec4
       float iDate[4];       // vec4
   };
@@ -315,14 +319,14 @@ Both targets compile through the **exact same Khronos glslang and Google Tint co
   static_assert(offsetof(ShadertoyUniforms, iMouse) == 32, "ShadertoyUniforms.iMouse offset must be 32 bytes");
 
   struct CameraUniforms {
-      float u_ViewProj[16];       // mat4x4
-      float u_Model[16];          // mat4x4
-      float u_NormalMatrix[16];   // mat4x4
-      float u_CameraPosition[3];  // vec3
+      float uViewProj[16];       // mat4x4
+      float uModel[16];          // mat4x4
+      float uNormalMatrix[16];   // mat4x4
+      float uCameraPosition[3];  // vec3
       float padding;              // Explicit 4-byte padding to align struct to 16-bytes
   };
   static_assert(sizeof(CameraUniforms) == 208, "CameraUniforms size must be 208 bytes");
-  static_assert(offsetof(CameraUniforms, u_CameraPosition) == 192, "CameraUniforms.u_CameraPosition offset must be 192 bytes");
+  static_assert(offsetof(CameraUniforms, uCameraPosition) == 192, "CameraUniforms.uCameraPosition offset must be 192 bytes");
   ```
 
 ### 5. Cyclic Rendering Dependency (Ping-Pong Buffer Deadlocks)

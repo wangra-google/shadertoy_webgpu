@@ -75,3 +75,11 @@ Testing/
 # Third-party dependencies managed by gclient
 /third_party/*
 !/third_party/.gclient
+
+# Frontend Build and Dependency Artifacts
+dist-web/
+web/node_modules/
+web/public/glslang.wasm
+web/public/engine_wasm.js
+web/public/engine_wasm.wasm
+

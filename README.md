@@ -119,30 +119,46 @@ The WebAssembly target compiles the C++ codebase into WASM and HTML using the **
    ```bash
    cmake --build build-web
    ```
-### Running in the Web Browser
+### 3. Setting Up & Running the React Frontend
 
-Due to browser security policies (CORS), WebAssembly files cannot be loaded directly from your local hard drive (`file://` paths). They must be served over a local HTTP server.
+The web target uses a modern **React + Vite** dashboard which wraps the WebGPU C++ engine, providing a live code editor, uniform controls, and real-time compilation logs.
 
-1. **Start a local web server** in the project root directory:
-   * **Using Python** (pre-installed on most systems):
-     ```bash
-     python -m http.server 8000
-     ```
-   * **Using Node.js** (alternative):
-     ```bash
-     npx http-server -p 8000
-     ```
+#### Step A: Install Node.js Dependencies
+Install the package dependencies from the project root (this will also copy `glslang.wasm` to the public folder automatically):
+```bash
+npm --prefix web install
+```
 
-2. **Open your web browser** and navigate to:
-   [http://localhost:8000/build-web/](http://localhost:8000/build-web/)
+*(Note: The compiled WebAssembly binaries `engine_wasm.js` and `engine_wasm.wasm` are now **automatically copied** to `web/public/` by CMake during the C++ build process in the previous section).*
 
-3. **Interact with the Web Application**:
-   * **Dashboard UI**: A glassmorphic control panel on the top-left displays live performance statistics (FPS and elapsed time).
-   * **Switch Geometries**: Click the buttons in the UI panel to dynamically map the shader onto different shapes:
-     * **2D Fullscreen Quad**: Classic Shadertoy mode.
-     * **Procedural Cube**: Maps the shader to a rotating 3D cube.
-     * **Procedural Sphere**: Maps the shader to a rotating 3D sphere.
-   * **Keyboard Shortcuts**: You can also press keys `[1]`, `[2]`, or `[3]` on your keyboard to switch geometries instantly.
+#### Step B: Run the Development Server
+Start the Vite local development server from the project root:
+```bash
+npm --prefix web run dev
+```
+Open your web browser and navigate to the URL printed in the terminal (typically `http://localhost:3000`).
+
+---
+
+### 4. Production Build (Web)
+To compile and bundle the React web application for production deployment from the project root:
+```bash
+npm --prefix web run build
+```
+The optimized production assets will be outputted to the **`dist-web/`** folder in the project root. You can serve this folder using any static web server:
+```bash
+npx http-server dist-web -p 8080
+```
+
+---
+
+## Interactive Controls (Testing Geometry Pipeline)
+While running either the Native Desktop or Web application, you can interact with the rendering pipeline:
+* **Geometry Selectors**: Switch the rendering target between a flat **2D Fullscreen Quad**, a **Procedural 3D Cube**, or a **Procedural 3D Sphere**.
+  * **Native**: Use keys `[1]`, `[2]`, `[3]`, or `[ESC]` to exit.
+  * **Web**: Click the buttons in the dashboard UI panel, or use the same keyboard shortcuts (`[1]`, `[2]`, `[3]`).
+* **Mouse Interactions**: Click and drag your mouse inside the viewport to update the `iMouse` uniforms in real-time (allowing drag-based interactive shaders).
+* **Live Shader Editing (Web)**: Edit the shader code directly in the code editor, select your language (WGSL), and press **Compile** (or `Alt + Enter`) to swap the pipeline on the fly.
 
 ---
 

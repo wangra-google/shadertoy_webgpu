@@ -13,12 +13,17 @@ constexpr float kPi = 3.14159265358979323846f;
 // Default fallback WGSL shader for Phase 1
 const char* DEFAULT_WGSL_SHADER = R"(
 struct ShadertoyUniforms {
+    // std140 packing: iResolution (12 bytes) + iTime (4 bytes) = 16 bytes (aligned)
     iResolution : vec3<f32>,
     iTime       : f32,
+    
+    // std140 packing: iTimeDelta (4B) + iFrameRate (4B) + iFrame (4B) + pad0 (4B) = 16 bytes (aligned)
     iTimeDelta  : f32,
     iFrameRate  : f32,
-    iFrame      : u32,
-    _pad0       : u32,
+    iFrame      : i32,
+    pad0        : u32,
+    
+    // 16-byte aligned vectors
     iMouse      : vec4<f32>,
     iDate       : vec4<f32>,
 };
@@ -28,7 +33,7 @@ struct CameraUniforms {
     uModel          : mat4x4<f32>,
     uNormalMatrix   : mat4x4<f32>,
     uCameraPosition : vec3<f32>,
-    _pad1            : f32,
+    padding         : f32,
 };
 
 @group(0) @binding(0) var<uniform> u_shadertoy : ShadertoyUniforms;
@@ -227,7 +232,6 @@ bool Renderer::Init() {
     mFragmentShaderModule = defaultShaderModule;
 
     bool success = CreatePipeline(defaultShaderModule, ShaderStage::Fragment, 0, /*isAsync=*/false);
-    wgpuShaderModuleRelease(defaultShaderModule);
 
     return success;
 }
@@ -253,9 +257,21 @@ void Renderer::SetUniforms(float time,
 bool Renderer::UpdateShader(const std::string& shaderSource,
                             const std::string& language,
                             ShaderStage stage,
-                            bool isShadertoy) {
+                            bool isShadertoy,
+                            std::function<void(bool, const std::string&)> callback) {
+    if (stage == ShaderStage::Compute) {
+        std::cerr << "Renderer: Compute shaders are not supported in the current rendering pipeline (Phase 3)." << std::endl;
+        if (callback) {
+            callback(false, "Compute shaders are not supported in the current rendering pipeline.");
+        }
+        return false;
+    }
+
     WGPUDevice device = mContext->GetDevice();
     if (!device) {
+        if (callback) {
+            callback(false, "WebGPU device is not initialized.");
+        }
         return false;
     }
 
@@ -267,12 +283,18 @@ bool Renderer::UpdateShader(const std::string& shaderSource,
 #if defined(__EMSCRIPTEN__)
         std::cerr << "Renderer: GLSL compilation is not supported in the WebAssembly core. "
                   << "Please compile to WGSL in JavaScript." << std::endl;
+        if (callback) {
+            callback(false, "GLSL compilation is not supported in the WebAssembly core.");
+        }
         return false;
 #else
         // Compile GLSL to WGSL on native desktop.
         wgslSource = shader_compiler::CompileGLSLToWGSL(shaderSource, stage, isShadertoy);
         if (wgslSource.empty()) {
             std::cerr << "Renderer: Failed to compile GLSL to WGSL!" << std::endl;
+            if (callback) {
+                callback(false, "Failed to compile GLSL to WGSL.");
+            }
             return false;
         }
 #endif
@@ -288,7 +310,7 @@ bool Renderer::UpdateShader(const std::string& shaderSource,
     shaderModuleDesc.nextInChain = &wgslDesc.chain;
 
     WGPUShaderModule newShaderModule = wgpuDeviceCreateShaderModule(device, &shaderModuleDesc);
-    bool result = CreatePipeline(newShaderModule, stage, compilationId, /*isAsync=*/true);
+    bool result = CreatePipeline(newShaderModule, stage, compilationId, /*isAsync=*/true, callback);
     wgpuShaderModuleRelease(newShaderModule);
     return result;
 }
@@ -309,9 +331,11 @@ struct PipelineAsyncData {
     WGPUShaderModule shaderModule;
     ShaderStage stage;
     uint64_t compilationId;
+    std::function<void(bool, const std::string&)> callback;
 };
 
-bool Renderer::CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uint64_t compilationId, bool isAsync) {
+bool Renderer::CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uint64_t compilationId, bool isAsync,
+                              std::function<void(bool, const std::string&)> callback) {
     WGPUDevice device = mContext->GetDevice();
 
     // Configure vertex attribute layouts matching Vertex struct
@@ -400,7 +424,7 @@ bool Renderer::CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uin
         // Keep the new module alive during async compilation
         wgpuShaderModuleAddRef(newModule);
 
-        auto* asyncData = new PipelineAsyncData{this, newModule, stage, compilationId};
+        auto* asyncData = new PipelineAsyncData{this, newModule, stage, compilationId, callback};
 
         WGPUCreateRenderPipelineAsyncCallbackInfo callbackInfo = {};
         callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
@@ -422,12 +446,19 @@ bool Renderer::CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uin
                     wgpuRenderPipelineRelease(pipeline);
                 }
                 wgpuShaderModuleRelease(newModule);
+                if (data->callback) {
+                    data->callback(false, "Obsolete compilation discarded.");
+                }
                 delete data;
                 return;
             }
 
+            bool success = false;
+            std::string errorMsg = "";
+
             if (status == WGPUCreatePipelineAsyncStatus_Success) {
                 self->SwapPipeline(pipeline);
+                success = true;
 
                 // Update the active shader module in the renderer
                 if (stage == ShaderStage::Fragment) {
@@ -447,13 +478,19 @@ bool Renderer::CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uin
                 std::cerr << "Asynchronous pipeline compilation failed: ";
                 if (message.data && message.length > 0) {
                     std::cerr.write(message.data, message.length);
+                    errorMsg = std::string(message.data, message.length);
                 } else {
                     std::cerr << "Unknown error";
+                    errorMsg = "Unknown error";
                 }
                 std::cerr << std::endl;
 
                 // Release reference on failure
                 wgpuShaderModuleRelease(newModule);
+            }
+
+            if (data->callback) {
+                data->callback(success, errorMsg);
             }
 
             delete data;
@@ -466,9 +503,15 @@ bool Renderer::CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uin
         WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &pipelineDesc);
         if (!pipeline) {
             std::cerr << "Failed to create render pipeline synchronously!" << std::endl;
+            if (callback) {
+                callback(false, "Failed to create render pipeline synchronously!");
+            }
             return false;
         }
         SwapPipeline(pipeline);
+        if (callback) {
+            callback(true, "");
+        }
         return true;
     }
 }

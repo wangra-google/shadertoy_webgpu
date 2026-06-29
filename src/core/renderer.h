@@ -1,10 +1,10 @@
 #ifndef CORE_RENDERER_H_
 #define CORE_RENDERER_H_
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
-
 #include "core/graphics_context.h"
 #include "core/math_utils.h"
 #include "core/mesh.h"
@@ -55,7 +55,8 @@ class Renderer {
     bool UpdateShader(const std::string& shaderSource,
                       const std::string& language = "wgsl",
                       ShaderStage stage = ShaderStage::Fragment,
-                      bool isShadertoy = true);
+                      bool isShadertoy = true,
+                      std::function<void(bool, const std::string&)> callback = nullptr);
     void SetGeometryType(GeometryType type);
     void Render();
     void Resize(uint32_t width, uint32_t height);
@@ -64,7 +65,8 @@ class Renderer {
     void SwapPipeline(WGPURenderPipeline newPipeline);
 
   private:
-    bool CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uint64_t compilationId, bool isAsync);
+    bool CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uint64_t compilationId, bool isAsync,
+                        std::function<void(bool, const std::string&)> callback = nullptr);
     void UpdateUniformBuffers();
     void CreateDepthTexture();
 

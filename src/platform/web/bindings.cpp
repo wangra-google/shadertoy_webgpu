@@ -36,8 +36,12 @@ class EngineCore {
                       const std::string& shaderSource,
                       const std::string& language,
                       const std::string& stage,
-                      bool isShadertoy) {
+                      bool isShadertoy,
+                      emscripten::val callback) {
         if (!mRenderer) {
+            if (!callback.isUndefined() && !callback.isNull()) {
+                callback(false, std::string("Renderer is not initialized."));
+            }
             return false;
         }
         ShaderStage cStage = ShaderStage::Fragment;
@@ -46,7 +50,15 @@ class EngineCore {
         } else if (stage == "compute") {
             cStage = ShaderStage::Compute;
         }
-        return mRenderer->UpdateShader(shaderSource, language, cStage, isShadertoy);
+
+        std::function<void(bool, const std::string&)> cppCallback = nullptr;
+        if (!callback.isUndefined() && !callback.isNull()) {
+            cppCallback = [callback](bool success, const std::string& errorMsg) {
+                callback(success, errorMsg);
+            };
+        }
+
+        return mRenderer->UpdateShader(shaderSource, language, cStage, isShadertoy, cppCallback);
     }
 
     std::string GetWrappedGLSL(const std::string& glslSource) {
