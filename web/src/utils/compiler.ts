@@ -1,4 +1,5 @@
 import glslangInit from '@webgpu/glslang/dist/web-devel/glslang.js';
+import { lastGlslangErrors, captureState, restoreConsole } from './consoleCapture';
 
 interface Glslang {
   compileGLSL(source: string, stage: string, genDebug: boolean): Uint32Array;
@@ -22,13 +23,20 @@ export function initCompiler(glslangWasmPath?: string, twgslWasmPath?: string): 
   }
 
   initPromise = (async () => {
-    const glslangOptions = glslangWasmPath ? { locateFile: () => glslangWasmPath } : undefined;
+    const glslangOptions = {
+      locateFile: glslangWasmPath ? () => glslangWasmPath : undefined
+    };
 
     // 1. Initialize glslang (always available)
+    // NOTE: @webgpu/glslang's glslangInit wrapper ignores custom print/printErr options
+    // and binds directly to the global console object during initialization.
+    // We temporarily monkey-patch the console before this call (in consoleCapture.ts)
+    // and restore it immediately after.
     const glslangModule = await (glslangInit as any)(glslangOptions);
     console.log("glslangModule resolved to:", glslangModule);
     glslang = glslangModule as Glslang;
     console.log("glslang is now:", glslang);
+    restoreConsole();
 
     // 2. Initialize twgsl (optional, from window.twgsl if loaded via script)
     const globalTwgslInit = (window as any).twgsl;
@@ -59,17 +67,33 @@ export function compileGLSLToWGSL(glslSource: string, stage: 'vertex' | 'fragmen
     throw new Error('Compiler not initialized. Call await initCompiler() first.');
   }
 
-  // 1. Compile GLSL to SPIR-V binary (Uint32Array)
-  const spirv = glslang.compileGLSL(glslSource, stage, false);
-  if (!spirv || spirv.length === 0) {
-    throw new Error('GLSL compilation to SPIR-V failed.');
-  }
+  // Clear previous errors before compiling
+  lastGlslangErrors.length = 0;
+  captureState.isCollecting = true;
 
-  // 2. Translate SPIR-V binary to WGSL string
-  const wgsl = twgsl.convertSpirV2WGSL(spirv);
-  if (!wgsl) {
-    throw new Error('SPIR-V to WGSL translation failed.');
-  }
+  try {
+    // 1. Compile GLSL to SPIR-V binary (Uint32Array)
+    let spirv: Uint32Array;
+    try {
+      spirv = glslang.compileGLSL(glslSource, stage, false);
+    } catch (err) {
+      const errorMsg = lastGlslangErrors.join('\n') || 'GLSL compilation to SPIR-V failed.';
+      throw new Error(errorMsg);
+    }
 
-  return wgsl;
+    if (!spirv || spirv.length === 0) {
+      const errorMsg = lastGlslangErrors.join('\n') || 'GLSL compilation to SPIR-V failed.';
+      throw new Error(errorMsg);
+    }
+
+    // 2. Translate SPIR-V binary to WGSL string
+    const wgsl = twgsl.convertSpirV2WGSL(spirv);
+    if (!wgsl) {
+      throw new Error('SPIR-V to WGSL translation failed.');
+    }
+
+    return wgsl;
+  } finally {
+    captureState.isCollecting = false;
+  }
 }
