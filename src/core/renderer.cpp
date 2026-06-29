@@ -235,11 +235,11 @@ bool Renderer::Init() {
     // Depth buffer texture
     CreateDepthTexture();
 
-    // Create default render targets for Buffer A, B, C, D
-    mTextureManager->CreateRenderTarget("BufferA", 0, 0, WGPUTextureFormat_RGBA8Unorm, true);
-    mTextureManager->CreateRenderTarget("BufferB", 0, 0, WGPUTextureFormat_RGBA8Unorm, true);
-    mTextureManager->CreateRenderTarget("BufferC", 0, 0, WGPUTextureFormat_RGBA8Unorm, true);
-    mTextureManager->CreateRenderTarget("BufferD", 0, 0, WGPUTextureFormat_RGBA8Unorm, true);
+    // Create default render targets for Buffer A, B, C, D (using RGBA16Float to match Shadertoy's high-precision buffers)
+    mTextureManager->CreateRenderTarget("BufferA", 0, 0, WGPUTextureFormat_RGBA16Float, true);
+    mTextureManager->CreateRenderTarget("BufferB", 0, 0, WGPUTextureFormat_RGBA16Float, true);
+    mTextureManager->CreateRenderTarget("BufferC", 0, 0, WGPUTextureFormat_RGBA16Float, true);
+    mTextureManager->CreateRenderTarget("BufferD", 0, 0, WGPUTextureFormat_RGBA16Float, true);
 
     // Resize render targets to match initial viewport size
     mTextureManager->ResizeRenderTargets(mContext->GetWidth(), mContext->GetHeight());

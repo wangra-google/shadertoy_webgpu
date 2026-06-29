@@ -453,6 +453,15 @@ export default function App() {
     return "main";
   };
 
+  const sanitizeGlsl = (source: string): string => {
+    return source
+      .replace(/\bref\b/g, 'ref_')
+      .replace(/\bptr\b/g, 'ptr_')
+      .replace(/\blet\b/g, 'let_')
+      .replace(/\bvar\b/g, 'var_')
+      .replace(/\bfn\b/g, 'fn_');
+  };
+
   const handleCompile = async (overrideCode?: string, overrideLanguage?: 'glsl' | 'wgsl', targetPassName?: string) => {
     if (!engineRef.current) {
       addLog("Cannot compile: WebGPU rendering engine is not initialized yet.", "error");
@@ -490,7 +499,8 @@ export default function App() {
         if (!compilerReady) {
           throw new Error("GLSL compiler is still loading. Please wait.");
         }
-        const wrappedGlsl = engineRef.current.get_wrapped_glsl(activeCode);
+        const sanitizedCode = sanitizeGlsl(activeCode);
+        const wrappedGlsl = engineRef.current.get_wrapped_glsl(sanitizedCode);
         wgslCode = compileGLSLToWGSL(wrappedGlsl, 'fragment');
       }
 

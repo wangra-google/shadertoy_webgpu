@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <vector>
+#include <regex>
 
 #include <glslang/Public/ShaderLang.h>
 #include <glslang/Public/ResourceLimits.h>
@@ -12,8 +13,19 @@
 
 namespace shader_compiler {
 
+std::string SanitizeGLSL(const std::string& source) {
+    std::string sanitized = source;
+    sanitized = std::regex_replace(sanitized, std::regex("\\bref\\b"), "ref_");
+    sanitized = std::regex_replace(sanitized, std::regex("\\bptr\\b"), "ptr_");
+    sanitized = std::regex_replace(sanitized, std::regex("\\blet\\b"), "let_");
+    sanitized = std::regex_replace(sanitized, std::regex("\\bvar\\b"), "var_");
+    sanitized = std::regex_replace(sanitized, std::regex("\\bfn\\b"), "fn_");
+    return sanitized;
+}
+
 std::string CompileGLSLToWGSL(const std::string& glslSource, ::ShaderStage stage, bool isShadertoy) {
-    std::string fullGlsl = glslSource;
+    std::string sanitizedGlsl = SanitizeGLSL(glslSource);
+    std::string fullGlsl = sanitizedGlsl;
     if (isShadertoy) {
         // Shadertoy shaders only define a mainImage() function and use implicit uniforms
         // (like iTime, iResolution) without declaring them. We prepend a compatibility
