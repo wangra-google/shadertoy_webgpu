@@ -373,6 +373,8 @@ bool Renderer::UpdateShader(const std::string& passName,
     wgslDesc.code = {wgslSource.c_str(), WGPU_STRLEN};
     shaderModuleDesc.nextInChain = &wgslDesc.chain;
 
+    std::cout << "=== WGSL SOURCE FOR " << passName << " ===\n" << wgslSource << "\n=====================\n" << std::endl;
+
     WGPUShaderModule newShaderModule = wgpuDeviceCreateShaderModule(device, &shaderModuleDesc);
     std::string vertexEP = (stage == ShaderStage::Vertex) ? entryPoint : pass->vertexEntryPoint;
     std::string fragmentEP = (stage == ShaderStage::Fragment) ? entryPoint : pass->fragmentEntryPoint;
@@ -878,7 +880,8 @@ void Renderer::CreateDepthTexture() {
         mDepthTextureView = nullptr;
     }
     if (mDepthTexture) {
-        wgpuTextureDestroy(mDepthTexture);
+        // Do NOT call wgpuTextureDestroy here, as the texture may still be in flight on the GPU.
+        // Rely on WebGPU's reference counting to destroy the texture safely once the GPU is done.
         wgpuTextureRelease(mDepthTexture);
         mDepthTexture = nullptr;
     }

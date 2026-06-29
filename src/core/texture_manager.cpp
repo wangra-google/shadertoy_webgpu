@@ -39,7 +39,8 @@ void TextureManager::ReleaseTextureResource(TextureResource& res) {
         res.view = nullptr;
     }
     if (res.texture) {
-        wgpuTextureDestroy(res.texture);
+        // Do NOT call wgpuTextureDestroy here, as the texture may still be in flight on the GPU.
+        // Rely on WebGPU's reference counting to destroy the texture safely once the GPU is done.
         wgpuTextureRelease(res.texture);
         res.texture = nullptr;
     }

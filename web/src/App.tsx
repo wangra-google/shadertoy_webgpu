@@ -214,6 +214,7 @@ export default function App() {
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [isCompiling, setIsCompiling] = useState(false);
   const [compilerReady, setCompilerReady] = useState(false);
+  const [resetTrigger, setResetTrigger] = useState(0);
   
   const engineRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -407,6 +408,8 @@ export default function App() {
         engineRef.current.set_pass_enabled(passName, nextEnabled);
       }
 
+      setResetTrigger(prev => prev + 1);
+
       if (nextEnabled) {
         // Compile immediately on enable
         setTimeout(() => {
@@ -504,6 +507,7 @@ export default function App() {
           setIsCompiling(false);
           if (success) {
             addLog(`Shader for ${targetPass} compiled and updated successfully.`, "info");
+            setResetTrigger(prev => prev + 1);
           } else {
             addLog(`Shader compilation for ${targetPass} failed: ${errorMsg}`, "error");
           }
@@ -587,6 +591,40 @@ export default function App() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={() => setResetTrigger(prev => prev + 1)}
+              title="Reset Time and Frame Count (Rewind)"
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-secondary)',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                e.currentTarget.style.color = '#fff';
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+                e.currentTarget.style.borderColor = 'var(--border)';
+              }}
+            >
+              <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H16.5" />
+              </svg>
+              Reset Time
+            </button>
+
             <button
               onClick={handleLoadClick}
               title="Load Shader from File (.glsl, .wgsl, .txt)"
@@ -743,6 +781,7 @@ export default function App() {
               <Viewport
                 onEngineReady={handleEngineReady}
                 geometryType={geometryType}
+                resetTrigger={resetTrigger}
               />
             </div>
           </div>

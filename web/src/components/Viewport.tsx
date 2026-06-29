@@ -3,9 +3,10 @@ import React, { useEffect, useRef, useState } from 'react';
 interface ViewportProps {
   onEngineReady: (engine: any) => void;
   geometryType: number; // 0: Quad, 1: Cube, 2: Sphere
+  resetTrigger?: number; // Incremented to trigger a simulation reset
 }
 
-export const Viewport: React.FC<ViewportProps> = ({ onEngineReady, geometryType }) => {
+export const Viewport: React.FC<ViewportProps> = ({ onEngineReady, geometryType, resetTrigger }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [fps, setFps] = useState<string>('0.0');
   const [elapsedTime, setElapsedTime] = useState<string>('0.0s');
@@ -14,6 +15,11 @@ export const Viewport: React.FC<ViewportProps> = ({ onEngineReady, geometryType 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const engineRef = useRef<any>(null);
   const animationFrameRef = useRef<number | null>(null);
+
+  // Timing refs for simulation control
+  const startTimeRef = useRef<number>(0);
+  const lastTimeRef = useRef<number>(0);
+  const frameCountRef = useRef<number>(0);
 
   // Mouse state
   const mouseRef = useRef({ x: 0, y: 0, z: 0, w: 0 });
@@ -84,18 +90,18 @@ export const Viewport: React.FC<ViewportProps> = ({ onEngineReady, geometryType 
         initializingRef.current = false;
 
         // Setup rendering loop
-        const startTime = performance.now();
-        let lastTime = startTime;
-        let frameCount = 0;
+        startTimeRef.current = performance.now();
+        lastTimeRef.current = startTimeRef.current;
+        frameCountRef.current = 0;
         let fpsAccumulator = 0;
         let fpsFrameCount = 0;
 
         const tick = (timestamp: number) => {
           if (!engineRef.current) return;
 
-          const totalTime = (timestamp - startTime) / 1000.0;
-          const timeDelta = (timestamp - lastTime) / 1000.0;
-          lastTime = timestamp;
+          const totalTime = (timestamp - startTimeRef.current) / 1000.0;
+          const timeDelta = (timestamp - lastTimeRef.current) / 1000.0;
+          lastTimeRef.current = timestamp;
 
           setElapsedTime(`${totalTime.toFixed(1)}s`);
 
@@ -114,12 +120,12 @@ export const Viewport: React.FC<ViewportProps> = ({ onEngineReady, geometryType 
             totalTime,
             timeDelta,
             1.0 / Math.max(timeDelta, 0.001),
-            frameCount,
+            frameCountRef.current,
             m.x, m.y, m.z, m.w
           );
 
           engine.tick(timestamp);
-          frameCount++;
+          frameCountRef.current++;
           animationFrameRef.current = requestAnimationFrame(tick);
         };
 
@@ -182,6 +188,16 @@ export const Viewport: React.FC<ViewportProps> = ({ onEngineReady, geometryType 
       engineRef.current.set_geometry_type(geometryType);
     }
   }, [geometryType, isInitialized]);
+
+  // Handle Simulation Reset
+  useEffect(() => {
+    if (isInitialized && resetTrigger && resetTrigger > 0) {
+      console.log("Viewport: Resetting simulation timing and frame count.");
+      startTimeRef.current = performance.now();
+      lastTimeRef.current = startTimeRef.current;
+      frameCountRef.current = 0;
+    }
+  }, [resetTrigger, isInitialized]);
 
   // Mouse event handlers to simulate Shadertoy iMouse behavior
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {

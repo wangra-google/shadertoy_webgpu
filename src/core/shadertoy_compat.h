@@ -6,6 +6,7 @@
 // GLSL header prepended to user-provided Shadertoy GLSL shaders.
 // It maps the standard Shadertoy inputs and uniform structures to WebGPU-compatible locations.
 inline constexpr std::string_view GLSL_SHADERTOY_HEADER = R"(#version 450
+#extension GL_EXT_samplerless_texture_functions : enable
 layout(location = 0) out vec4 outColor;
 
 // Input attributes from the vertex shader.
@@ -34,6 +35,7 @@ layout(set = 1, binding = 4) uniform texture2D iChannel3;
 // and automatically flipping the Y coordinate to match Shadertoy's Y-up texture space.
 #define texture(tex, uv_coord) texture(sampler2D(tex, s_sampler), vec2((uv_coord).x, 1.0 - (uv_coord).y))
 #define textureLod(tex, uv_coord, lod) textureLod(sampler2D(tex, s_sampler), vec2((uv_coord).x, 1.0 - (uv_coord).y), lod)
+#define texelFetch(tex, coord, lod) texelFetch(tex, ivec2((coord).x, textureSize(tex, lod).y - 1 - (coord).y), lod)
 
 // User entry point declaration
 void mainImage(out vec4 fragColor, in vec2 fragCoord);
