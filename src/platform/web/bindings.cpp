@@ -36,6 +36,7 @@ class EngineCore {
                       const std::string& shaderSource,
                       const std::string& language,
                       const std::string& stage,
+                      const std::string& entryPoint,
                       bool isShadertoy,
                       emscripten::val callback) {
         if (!mRenderer) {
@@ -58,7 +59,12 @@ class EngineCore {
             };
         }
 
-        return mRenderer->UpdateShader(shaderSource, language, cStage, isShadertoy, cppCallback);
+        std::string ep = entryPoint;
+        if (ep.empty()) {
+            ep = "main";
+        }
+
+        return mRenderer->UpdateShader(shaderSource, language, cStage, ep, isShadertoy, cppCallback);
     }
 
     std::string GetWrappedGLSL(const std::string& glslSource) {

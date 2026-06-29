@@ -45,7 +45,7 @@ struct VertexOutput {
 };
 
 @fragment
-fn fs_main(input : VertexOutput) -> @location(0) vec4<f32> {
+fn main(input : VertexOutput) -> @location(0) vec4<f32> {
     let uv = input.uv;
     let time = u_shadertoy.iTime;
     
@@ -118,6 +118,21 @@ export default function App() {
     addLog(`Switched language to ${lang.toUpperCase()}`, "info");
   };
 
+  // Helper to extract the entry point function name for a given shader stage in WGSL
+  const findEntryPoint = (wgslCode: string, stage: 'fragment' | 'vertex'): string => {
+    // Strip block and line comments to avoid matching commented-out entry points
+    const cleanCode = wgslCode
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*/g, '');
+
+    const regex = new RegExp(`@${stage}\\s+fn\\s+(\\w+)`, 'i');
+    const match = cleanCode.match(regex);
+    if (match && match[1]) {
+      return match[1];
+    }
+    return "main"; // fallback
+  };
+
   // Compile and update the shader in the engine
   const handleCompile = async () => {
     if (!engineRef.current) {
@@ -144,13 +159,17 @@ export default function App() {
         wgslCode = compileGLSLToWGSL(wrappedGlsl, 'fragment');
       }
 
+      // Find the entry point name dynamically from the WGSL code
+      const entryPoint = findEntryPoint(wgslCode, 'fragment');
+
       // 2. Upload the WGSL shader to the engine, passing a callback
-      // Signature: update_shader(passName, shaderSource, language, stage, isShadertoy, callback)
+      // Signature: update_shader(passName, shaderSource, language, stage, entryPoint, isShadertoy, callback)
       engineRef.current.update_shader(
         "Image",
         wgslCode,
         "wgsl",
         "fragment",
+        entryPoint,
         true, // isShadertoy
         (success: boolean, errorMsg: string) => {
           setIsCompiling(false);

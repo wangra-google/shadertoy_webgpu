@@ -8,10 +8,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Premium Favicon -->
+    <link rel="icon" type="image/png" href="/favicon.png" />
   </head>
   <body>
     <div id="root"></div>
     <!-- Load the Emscripten JavaScript glue code from public directory -->
+    <script src="/twgsl.js"></script>
     <script src="/engine_wasm.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>

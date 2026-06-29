@@ -5,7 +5,7 @@ interface Glslang {
 }
 
 interface Twgsl {
-  convertSpirV(spirv: Uint32Array): string;
+  convertSpirV2WGSL(spirv: Uint32Array): string;
 }
 
 let glslang: Glslang | null = null;
@@ -23,7 +23,6 @@ export function initCompiler(glslangWasmPath?: string, twgslWasmPath?: string): 
 
   initPromise = (async () => {
     const glslangOptions = glslangWasmPath ? { locateFile: () => glslangWasmPath } : undefined;
-    const twgslOptions = twgslWasmPath ? { locateFile: () => twgslWasmPath } : undefined;
 
     // 1. Initialize glslang (always available)
     const glslangModule = await (glslangInit as any)(glslangOptions);
@@ -35,7 +34,7 @@ export function initCompiler(glslangWasmPath?: string, twgslWasmPath?: string): 
     const globalTwgslInit = (window as any).twgsl;
     if (globalTwgslInit) {
       try {
-        const twgslModule = await globalTwgslInit(twgslOptions);
+        const twgslModule = await globalTwgslInit(twgslWasmPath);
         twgsl = twgslModule as Twgsl;
         console.log("twgsl initialized successfully.");
       } catch (err) {
@@ -67,7 +66,7 @@ export function compileGLSLToWGSL(glslSource: string, stage: 'vertex' | 'fragmen
   }
 
   // 2. Translate SPIR-V binary to WGSL string
-  const wgsl = twgsl.convertSpirV(spirv);
+  const wgsl = twgsl.convertSpirV2WGSL(spirv);
   if (!wgsl) {
     throw new Error('SPIR-V to WGSL translation failed.');
   }

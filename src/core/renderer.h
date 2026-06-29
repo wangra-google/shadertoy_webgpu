@@ -1,6 +1,7 @@
 #ifndef CORE_RENDERER_H_
 #define CORE_RENDERER_H_
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
@@ -55,6 +56,7 @@ class Renderer {
     bool UpdateShader(const std::string& shaderSource,
                       const std::string& language = "wgsl",
                       ShaderStage stage = ShaderStage::Fragment,
+                      const std::string& entryPoint = "main",
                       bool isShadertoy = true,
                       std::function<void(bool, const std::string&)> callback = nullptr);
     void SetGeometryType(GeometryType type);
@@ -66,11 +68,15 @@ class Renderer {
 
   private:
     bool CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uint64_t compilationId, bool isAsync,
+                        const std::string& vertexEntryPoint, const std::string& fragmentEntryPoint,
                         std::function<void(bool, const std::string&)> callback = nullptr);
     void UpdateUniformBuffers();
     void CreateDepthTexture();
 
     GraphicsContext* mContext = nullptr;
+
+    // Thread-safe lifetime tracking to prevent Use-After-Free in async WebGPU callbacks
+    std::shared_ptr<std::atomic<bool>> mIsAlive;
 
     // WebGPU Pipeline Objects
     WGPUBindGroupLayout mBindGroupLayout = nullptr;
@@ -98,6 +104,10 @@ class Renderer {
     // Shader Modules for independent stages
     WGPUShaderModule mVertexShaderModule = nullptr;
     WGPUShaderModule mFragmentShaderModule = nullptr;
+
+    // Entry points for independent stages (helps support GLSL-translated "main" and WGSL "vs_main"/"fs_main")
+    std::string mVertexEntryPoint = "vs_main";
+    std::string mFragmentEntryPoint = "fs_main";
 
     // Track compilation requests to prevent race conditions during rapid edits
     uint64_t mLatestRequestedCompilationId = 0;

@@ -82,4 +82,6 @@ web/node_modules/
 web/public/glslang.wasm
 web/public/engine_wasm.js
 web/public/engine_wasm.wasm
+web/public/twgsl.js
+web/public/twgsl.wasm
 

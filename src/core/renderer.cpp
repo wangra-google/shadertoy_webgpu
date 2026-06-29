@@ -83,6 +83,7 @@ fn fs_main(input : VertexOutput) -> @location(0) vec4<f32> {
 
 Renderer::Renderer(GraphicsContext* context)
     : mContext(context),
+      mIsAlive(std::make_shared<std::atomic<bool>>(true)),
       mBindGroupLayout(nullptr),
       mPipelineLayout(nullptr),
       mRenderPipeline(nullptr),
@@ -98,6 +99,7 @@ Renderer::Renderer(GraphicsContext* context)
 }
 
 Renderer::~Renderer() {
+    mIsAlive->store(false);
     if (mDepthTextureView) {
         wgpuTextureViewRelease(mDepthTextureView);
     }
@@ -231,7 +233,7 @@ bool Renderer::Init() {
     wgpuShaderModuleAddRef(defaultShaderModule); // Increments ref count to share with fragment stage
     mFragmentShaderModule = defaultShaderModule;
 
-    bool success = CreatePipeline(defaultShaderModule, ShaderStage::Fragment, 0, /*isAsync=*/false);
+    bool success = CreatePipeline(defaultShaderModule, ShaderStage::Fragment, 0, /*isAsync=*/false, "vs_main", "fs_main");
 
     return success;
 }
@@ -257,6 +259,7 @@ void Renderer::SetUniforms(float time,
 bool Renderer::UpdateShader(const std::string& shaderSource,
                             const std::string& language,
                             ShaderStage stage,
+                            const std::string& entryPoint,
                             bool isShadertoy,
                             std::function<void(bool, const std::string&)> callback) {
     if (stage == ShaderStage::Compute) {
@@ -310,7 +313,10 @@ bool Renderer::UpdateShader(const std::string& shaderSource,
     shaderModuleDesc.nextInChain = &wgslDesc.chain;
 
     WGPUShaderModule newShaderModule = wgpuDeviceCreateShaderModule(device, &shaderModuleDesc);
-    bool result = CreatePipeline(newShaderModule, stage, compilationId, /*isAsync=*/true, callback);
+    std::string vertexEP = (stage == ShaderStage::Vertex) ? entryPoint : mVertexEntryPoint;
+    std::string fragmentEP = (stage == ShaderStage::Fragment) ? entryPoint : mFragmentEntryPoint;
+    bool result = CreatePipeline(newShaderModule, stage, compilationId, /*isAsync=*/true,
+                                 vertexEP, fragmentEP, callback);
     wgpuShaderModuleRelease(newShaderModule);
     return result;
 }
@@ -331,10 +337,14 @@ struct PipelineAsyncData {
     WGPUShaderModule shaderModule;
     ShaderStage stage;
     uint64_t compilationId;
+    std::string vertexEntryPoint;
+    std::string fragmentEntryPoint;
+    std::shared_ptr<std::atomic<bool>> isAlive;
     std::function<void(bool, const std::string&)> callback;
 };
 
 bool Renderer::CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uint64_t compilationId, bool isAsync,
+                              const std::string& vertexEntryPoint, const std::string& fragmentEntryPoint,
                               std::function<void(bool, const std::string&)> callback) {
     WGPUDevice device = mContext->GetDevice();
 
@@ -374,7 +384,7 @@ bool Renderer::CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uin
     colorTarget.blend = nullptr;  // standard blending disabled
 
     WGPUFragmentState fragmentState = {};
-    fragmentState.entryPoint = {"fs_main", WGPU_STRLEN};
+    fragmentState.entryPoint = {fragmentEntryPoint.c_str(), WGPU_STRLEN};
     fragmentState.targetCount = 1;
     fragmentState.targets = &colorTarget;
 
@@ -393,7 +403,7 @@ bool Renderer::CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uin
     pipelineDesc.label = {"Renderer Render Pipeline", WGPU_STRLEN};
     pipelineDesc.layout = mPipelineLayout;
 
-    pipelineDesc.vertex.entryPoint = {"vs_main", WGPU_STRLEN};
+    pipelineDesc.vertex.entryPoint = {vertexEntryPoint.c_str(), WGPU_STRLEN};
     pipelineDesc.vertex.bufferCount = 1;
     pipelineDesc.vertex.buffers = &vertexBufferLayout;
 
@@ -424,7 +434,8 @@ bool Renderer::CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uin
         // Keep the new module alive during async compilation
         wgpuShaderModuleAddRef(newModule);
 
-        auto* asyncData = new PipelineAsyncData{this, newModule, stage, compilationId, callback};
+        auto* asyncData = new PipelineAsyncData{
+            this, newModule, stage, compilationId, vertexEntryPoint, fragmentEntryPoint, mIsAlive, callback};
 
         WGPUCreateRenderPipelineAsyncCallbackInfo callbackInfo = {};
         callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
@@ -432,6 +443,17 @@ bool Renderer::CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uin
                                    WGPURenderPipeline pipeline, WGPUStringView message,
                                    void* userdata1, void* userdata2) {
             auto* data = static_cast<PipelineAsyncData*>(userdata1);
+            
+            // Thread-safe lifetime check: if the renderer was destroyed in the meantime, abort!
+            if (!data->isAlive->load()) {
+                wgpuShaderModuleRelease(data->shaderModule);
+                if (status == WGPUCreatePipelineAsyncStatus_Success) {
+                    wgpuRenderPipelineRelease(pipeline);
+                }
+                delete data;
+                return;
+            }
+
             Renderer* self = data->renderer;
             WGPUShaderModule newModule = data->shaderModule;
             ShaderStage stage = data->stage;
@@ -460,17 +482,19 @@ bool Renderer::CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uin
                 self->SwapPipeline(pipeline);
                 success = true;
 
-                // Update the active shader module in the renderer
+                // Update the active shader module and entry points in the renderer
                 if (stage == ShaderStage::Fragment) {
                     if (self->mFragmentShaderModule) {
                         wgpuShaderModuleRelease(self->mFragmentShaderModule);
                     }
                     self->mFragmentShaderModule = newModule;
+                    self->mFragmentEntryPoint = data->fragmentEntryPoint;
                 } else if (stage == ShaderStage::Vertex) {
                     if (self->mVertexShaderModule) {
                         wgpuShaderModuleRelease(self->mVertexShaderModule);
                     }
                     self->mVertexShaderModule = newModule;
+                    self->mVertexEntryPoint = data->vertexEntryPoint;
                 } else {
                     wgpuShaderModuleRelease(newModule);
                 }
@@ -509,6 +533,11 @@ bool Renderer::CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uin
             return false;
         }
         SwapPipeline(pipeline);
+        if (stage == ShaderStage::Fragment) {
+            mFragmentEntryPoint = fragmentEntryPoint;
+        } else if (stage == ShaderStage::Vertex) {
+            mVertexEntryPoint = vertexEntryPoint;
+        }
         if (callback) {
             callback(true, "");
         }
