@@ -55,6 +55,42 @@ fn main(input : VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(col, 1.0);
 }`;
 
+/**
+ * Heuristic helper to detect whether a shader code string is GLSL or WGSL.
+ */
+const detectLanguage = (code: string): 'glsl' | 'wgsl' => {
+  const cleanCode = code
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*/g, '');
+
+  const wgslPatterns = [
+    /@fragment|@vertex|@compute/i,
+    /fn\s+\w+\s*\(/,
+    /vec\d<[fui]32>/,
+    /\bvar\b|\blet\b/
+  ];
+
+  const glslPatterns = [
+    /#version/i,
+    /void\s+main/i,
+    /\bvec2\b|\bvec3\b|\bvec4\b/,
+    /\buniform\b|\bvarying\b|\battribute\b/
+  ];
+
+  let wgslScore = 0;
+  let glslScore = 0;
+
+  for (const pattern of wgslPatterns) {
+    if (pattern.test(cleanCode)) wgslScore++;
+  }
+
+  for (const pattern of glslPatterns) {
+    if (pattern.test(cleanCode)) glslScore++;
+  }
+
+  return wgslScore >= glslScore ? 'wgsl' : 'glsl';
+};
+
 export default function App() {
   const [code, setCode] = useState(DEFAULT_WGSL);
   const [language, setLanguage] = useState<'glsl' | 'wgsl'>('wgsl');
@@ -64,6 +100,79 @@ export default function App() {
   const [compilerReady, setCompilerReady] = useState(false);
   
   const engineRef = useRef<any>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounter = useRef(0);
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounter.current = 0;
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      const fileName = file.name;
+      const extension = fileName.split('.').pop()?.toLowerCase();
+
+      if (extension === 'glsl' || extension === 'txt' || extension === 'wgsl') {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const content = event.target?.result as string;
+          if (content) {
+            setCode(content);
+            
+            // Auto-detect language based on file extension or heuristics
+            let targetLang: 'glsl' | 'wgsl' = language;
+            if (extension === 'wgsl') {
+              targetLang = 'wgsl';
+              setLanguage('wgsl');
+              addLog(`Imported WGSL shader from ${fileName}`, "info");
+            } else if (extension === 'glsl') {
+              targetLang = 'glsl';
+              setLanguage('glsl');
+              addLog(`Imported GLSL shader from ${fileName}`, "info");
+            } else if (extension === 'txt') {
+              targetLang = detectLanguage(content);
+              setLanguage(targetLang);
+              addLog(`Imported .txt file. Auto-detected language as ${targetLang.toUpperCase()}`, "info");
+            } else {
+              addLog(`Imported shader from ${fileName}`, "info");
+            }
+
+            // Compile immediately with the new content and target language
+            handleCompile(content, targetLang);
+          }
+        };
+        reader.readAsText(file);
+      } else {
+        addLog(`Unsupported file type: .${extension}. Please drop a .glsl, .wgsl, or .txt file.`, "error");
+      }
+    }
+  };
 
   // Helper to add logs programmatically
   const addLog = (text: string, type: 'info' | 'error' | 'warning') => {
@@ -134,20 +243,23 @@ export default function App() {
   };
 
   // Compile and update the shader in the engine
-  const handleCompile = async () => {
+  const handleCompile = async (overrideCode?: string, overrideLanguage?: 'glsl' | 'wgsl') => {
     if (!engineRef.current) {
       addLog("Cannot compile: WebGPU rendering engine is not initialized yet.", "error");
       return;
     }
 
+    const activeLanguage = overrideLanguage !== undefined ? overrideLanguage : language;
+    const activeCode = overrideCode !== undefined ? overrideCode : code;
+
     setIsCompiling(true);
-    addLog(`Compiling ${language.toUpperCase()} shader...`, "info");
+    addLog(`Compiling ${activeLanguage.toUpperCase()} shader...`, "info");
 
     try {
-      let wgslCode = code;
+      let wgslCode = activeCode;
 
       // 1. If GLSL, compile to WGSL first
-      if (language === 'glsl') {
+      if (activeLanguage === 'glsl') {
         if (!compilerReady) {
           throw new Error("GLSL compiler is still loading. Please wait.");
         }
@@ -155,7 +267,7 @@ export default function App() {
         // Wrap the GLSL code first (or let C++ wrap it? No, in Web, C++ does not support GLSL compilation,
         // so we must wrap it in JS and compile the full shader).
         // Let's get the wrapped GLSL code from the engine!
-        const wrappedGlsl = engineRef.current.get_wrapped_glsl(code);
+        const wrappedGlsl = engineRef.current.get_wrapped_glsl(activeCode);
         wgslCode = compileGLSLToWGSL(wrappedGlsl, 'fragment');
       }
 
@@ -198,13 +310,20 @@ export default function App() {
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100vh',
-      background: 'var(--bg-main)',
-      color: 'var(--text-primary)'
-    }}>
+    <div 
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        background: 'var(--bg-main)',
+        color: 'var(--text-primary)',
+        position: 'relative'
+      }}
+    >
       {/* Premium Header */}
       <header style={{
         height: 'var(--header-height)',
@@ -400,6 +519,59 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      {isDragging && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(10, 10, 18, 0.85)',
+          backdropFilter: 'blur(8px)',
+          border: '2px dashed var(--accent-color)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          pointerEvents: 'none'
+        }}>
+          <div style={{
+            padding: '40px',
+            borderRadius: '24px',
+            background: 'rgba(255, 255, 255, 0.03)',
+            border: '1px solid rgba(255, 255, 255, 0.05)',
+            textAlign: 'center',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '20px'
+          }}>
+            <div style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '20px',
+              background: 'var(--accent-gradient)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 0 30px var(--accent-glow)'
+            }}>
+              <svg style={{ width: '40px', height: '40px', color: '#fff' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+            </div>
+            <div>
+              <h3 style={{ fontSize: '1.5rem', fontWeight: 800, margin: '0 0 8px 0' }}>Import Shader File</h3>
+              <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.9rem' }}>
+                Drop a <span style={{ color: 'var(--accent-color)' }}>.glsl</span>, <span style={{ color: 'var(--accent-color)' }}>.wgsl</span>, or <span style={{ color: 'var(--accent-color)' }}>.txt</span> file to load it in the editor.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
