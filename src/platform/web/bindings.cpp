@@ -1,5 +1,6 @@
 #include <emscripten/bind.h>
 #include <emscripten/val.h>
+#include <emscripten.h>
 
 #include <iostream>
 #include <memory>
@@ -64,7 +65,7 @@ class EngineCore {
             ep = "main";
         }
 
-        return mRenderer->UpdateShader(shaderSource, language, cStage, ep, isShadertoy, cppCallback);
+        return mRenderer->UpdateShader(passName, shaderSource, language, cStage, ep, isShadertoy, cppCallback);
     }
 
     std::string GetWrappedGLSL(const std::string& glslSource) {
@@ -72,11 +73,43 @@ class EngineCore {
     }
 
     void LoadMeshData(const emscripten::val& verticesArray, const emscripten::val& indicesArray) {
-        // Stub for Phase 1. Will be implemented in Phase 4.
+        // Stub for Phase 5.
     }
 
-    void LoadTextureData(int channel, const emscripten::val& pixelsArray, int width, int height) {
-        // Stub for Phase 1. Will be implemented in Phase 4.
+    void LoadTextureData(const std::string& name, const emscripten::val& pixelsArray, int width, int height, const std::string& format) {
+        if (!mRenderer) return;
+
+        // Defensive check: ensure pixelsArray is a valid object containing byteLength
+        if (pixelsArray.isUndefined() || pixelsArray.isNull() || pixelsArray["byteLength"].isUndefined()) {
+            std::cerr << "EngineCore: Invalid pixelsArray passed to LoadTextureData!" << std::endl;
+            return;
+        }
+
+        unsigned int length = pixelsArray["byteLength"].as<unsigned int>();
+        std::vector<uint8_t> buffer(length);
+        
+        // Copy JS typed array directly into the C++ vector using Emscripten EM_ASM
+        MAIN_THREAD_EM_ASM({
+            const pixelsArray = Emval.toValue($0);
+            const destPtr = $1;
+            const length = $2;
+            const destView = new Uint8Array(HEAPU8.buffer, destPtr, length);
+            destView.set(new Uint8Array(pixelsArray.buffer, pixelsArray.byteOffset, pixelsArray.byteLength));
+        }, pixelsArray.as_handle(), buffer.data(), length);
+
+        mRenderer->LoadTextureData(name, buffer.data(), static_cast<uint32_t>(width), static_cast<uint32_t>(height), format);
+    }
+
+    void SetPassInput(const std::string& passName, int channel, const std::string& inputName) {
+        if (mRenderer) {
+            mRenderer->SetPassInput(passName, channel, inputName);
+        }
+    }
+
+    void SetPassEnabled(const std::string& passName, bool enabled) {
+        if (mRenderer) {
+            mRenderer->SetPassEnabled(passName, enabled);
+        }
     }
 
     void SetUniforms(float time,
@@ -125,8 +158,11 @@ EMSCRIPTEN_BINDINGS(engine_bindings) {
         .function("get_wrapped_glsl", &EngineCore::GetWrappedGLSL)
         .function("load_mesh_data", &EngineCore::LoadMeshData)
         .function("load_texture_data", &EngineCore::LoadTextureData)
+        .function("set_pass_input", &EngineCore::SetPassInput)
+        .function("set_pass_enabled", &EngineCore::SetPassEnabled)
         .function("set_uniforms", &EngineCore::SetUniforms)
         .function("tick", &EngineCore::Tick)
         .function("resize", &EngineCore::Resize)
         .function("set_geometry_type", &EngineCore::SetGeometryType);
 }
+

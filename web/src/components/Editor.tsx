@@ -11,6 +11,11 @@ interface EditorProps {
   language: 'glsl' | 'wgsl';
   onLanguageChange: (lang: 'glsl' | 'wgsl') => void;
   isCompiling: boolean;
+  passes: string[];
+  activePass: string;
+  onActivePassChange: (passName: string) => void;
+  passEnabled: Record<string, boolean>;
+  onPassToggle: (passName: string) => void;
 }
 
 export const Editor: React.FC<EditorProps> = ({
@@ -20,6 +25,11 @@ export const Editor: React.FC<EditorProps> = ({
   language,
   onLanguageChange,
   isCompiling,
+  passes,
+  activePass,
+  onActivePassChange,
+  passEnabled,
+  onPassToggle,
 }) => {
   
   // Custom editor theme using CodeMirror 6 EditorView.theme
@@ -80,21 +90,57 @@ export const Editor: React.FC<EditorProps> = ({
         padding: '12px 16px',
         background: 'rgba(9, 9, 16, 0.8)',
         borderBottom: '1px solid var(--border)',
+        flexWrap: 'wrap',
+        gap: '12px'
       }}>
         {/* Pass Tabs */}
-        <div style={{ display: 'flex', gap: '4px' }}>
-          <button style={{
-            background: 'rgba(99, 102, 241, 0.15)',
-            border: '1px solid rgba(99, 102, 241, 0.3)',
-            color: '#fff',
-            padding: '6px 16px',
-            borderRadius: '8px',
-            fontSize: '0.85rem',
-            fontWeight: 600,
-            cursor: 'pointer'
-          }}>
-            Image
-          </button>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {passes.map((pass) => {
+            const isImage = pass === 'Image';
+            const isActive = pass === activePass;
+            const isEnabled = passEnabled[pass] || isImage;
+            
+            return (
+              <div 
+                key={pass}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: isActive ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid ' + (isActive ? 'rgba(99, 102, 241, 0.3)' : 'var(--border)'),
+                  borderRadius: '8px',
+                  padding: '2px 8px',
+                  gap: '4px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {!isImage && (
+                  <input 
+                    type="checkbox"
+                    checked={isEnabled}
+                    onChange={() => onPassToggle(pass)}
+                    title={`Enable/Disable ${pass}`}
+                    style={{ cursor: 'pointer', width: '14px', height: '14px' }}
+                  />
+                )}
+                <button
+                  onClick={() => onActivePassChange(pass)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: isEnabled ? (isActive ? '#fff' : 'var(--text-secondary)') : 'var(--text-muted)',
+                    fontSize: '0.8rem',
+                    fontWeight: isActive ? 700 : 500,
+                    cursor: 'pointer',
+                    padding: '4px 4px',
+                    outline: 'none'
+                  }}
+                >
+                  {pass}
+                </button>
+              </div>
+            );
+          })}
         </div>
 
         {/* Controls */}
@@ -143,7 +189,7 @@ export const Editor: React.FC<EditorProps> = ({
 
           {/* Compile Button */}
           <button
-            onClick={onCompile}
+            onClick={() => onCompile()}
             disabled={isCompiling}
             className="glow-on-hover"
             style={{
@@ -210,3 +256,4 @@ export const Editor: React.FC<EditorProps> = ({
     </div>
   );
 };
+

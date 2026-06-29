@@ -9,6 +9,7 @@
 #include "core/graphics_context.h"
 #include "core/math_utils.h"
 #include "core/mesh.h"
+#include "core/texture_manager.h"
 
 enum class GeometryType { Quad, Cube, Sphere };
 
@@ -41,6 +42,30 @@ static_assert(offsetof(CameraUniforms, uCameraPosition) == 192,
 
 class Renderer {
   public:
+    struct RenderPass {
+        std::string name;
+        bool enabled = false;
+        
+        // WebGPU Pipeline Objects
+        WGPUShaderModule vertexShaderModule = nullptr;
+        WGPUShaderModule fragmentShaderModule = nullptr;
+        WGPURenderPipeline pipeline = nullptr;
+        
+        // Shader entry points
+        std::string vertexEntryPoint = "vs_main";
+        std::string fragmentEntryPoint = "fs_main";
+        
+        // Input texture names for iChannel0..3
+        std::string inputs[4] = {"", "", "", ""};
+        
+        // Track compilation requests to prevent race conditions
+        uint64_t latestRequestedCompilationId = 0;
+
+        // Cached Bind Group 1 & bound texture views
+        WGPUBindGroup bindGroup1 = nullptr;
+        WGPUTextureView boundViews[4] = {nullptr, nullptr, nullptr, nullptr};
+    };
+
     explicit Renderer(GraphicsContext* context);
     ~Renderer();
 
@@ -53,7 +78,8 @@ class Renderer {
                      float mouseY,
                      float mouseZ,
                      float mouseW);
-    bool UpdateShader(const std::string& shaderSource,
+    bool UpdateShader(const std::string& passName,
+                      const std::string& shaderSource,
                       const std::string& language = "wgsl",
                       ShaderStage stage = ShaderStage::Fragment,
                       const std::string& entryPoint = "main",
@@ -63,26 +89,43 @@ class Renderer {
     void Render();
     void Resize(uint32_t width, uint32_t height);
 
-    // Swap compiled pipeline asynchronously (called from static WebGPU callback)
-    void SwapPipeline(WGPURenderPipeline newPipeline);
+    // Set input channel source for a specific pass
+    void SetPassInput(const std::string& passName, int channel, const std::string& inputName);
+
+    // Enable or disable a specific pass
+    void SetPassEnabled(const std::string& passName, bool enabled);
+
+    // Load texture data from CPU memory
+    void LoadTextureData(const std::string& name, const void* pixels, uint32_t width, uint32_t height, const std::string& format);
+
+    // Swap compiled pipeline asynchronously for a specific pass (called from WebGPU callback)
+    void SwapPipeline(const std::string& passName, WGPURenderPipeline newPipeline, WGPUShaderModule newModule, ShaderStage stage, const std::string& entryPoint);
+
+    // Get the texture manager
+    TextureManager* GetTextureManager() const { return mTextureManager.get(); }
 
   private:
-    bool CreatePipeline(WGPUShaderModule newModule, ShaderStage stage, uint64_t compilationId, bool isAsync,
+    RenderPass* FindPass(const std::string& name);
+    bool CreatePipeline(RenderPass& pass, WGPUShaderModule newModule, ShaderStage stage, uint64_t compilationId, bool isAsync,
                         const std::string& vertexEntryPoint, const std::string& fragmentEntryPoint,
                         std::function<void(bool, const std::string&)> callback = nullptr);
     void UpdateUniformBuffers();
     void CreateDepthTexture();
+    WGPUBindGroup GetOrCreateBindGroup1(RenderPass& pass);
 
     GraphicsContext* mContext = nullptr;
 
     // Thread-safe lifetime tracking to prevent Use-After-Free in async WebGPU callbacks
     std::shared_ptr<std::atomic<bool>> mIsAlive;
 
-    // WebGPU Pipeline Objects
-    WGPUBindGroupLayout mBindGroupLayout = nullptr;
+    // Texture Manager
+    std::unique_ptr<TextureManager> mTextureManager = nullptr;
+
+    // WebGPU Pipeline Layout Objects
+    WGPUBindGroupLayout mBindGroupLayout = nullptr;  // Group 0: Uniforms
+    WGPUBindGroupLayout mBindGroupLayout1 = nullptr; // Group 1: Textures
     WGPUPipelineLayout mPipelineLayout = nullptr;
-    WGPURenderPipeline mRenderPipeline = nullptr;
-    WGPUBindGroup mBindGroup = nullptr;
+    WGPUBindGroup mBindGroup = nullptr;             // Group 0 Bind Group (Shared)
 
     // Uniform Buffers & CPU Structs
     WGPUBuffer mShadertoyUniformBuffer = nullptr;
@@ -97,20 +140,13 @@ class Renderer {
     std::unique_ptr<Mesh> mSphereMesh = nullptr;
     GeometryType mGeometryType = GeometryType::Quad;
 
-    // Depth Stencil for 3D meshes
+    // Depth Stencil (Shared across passes)
     WGPUTexture mDepthTexture = nullptr;
     WGPUTextureView mDepthTextureView = nullptr;
 
-    // Shader Modules for independent stages
-    WGPUShaderModule mVertexShaderModule = nullptr;
-    WGPUShaderModule mFragmentShaderModule = nullptr;
-
-    // Entry points for independent stages (helps support GLSL-translated "main" and WGSL "vs_main"/"fs_main")
-    std::string mVertexEntryPoint = "vs_main";
-    std::string mFragmentEntryPoint = "fs_main";
-
-    // Track compilation requests to prevent race conditions during rapid edits
-    uint64_t mLatestRequestedCompilationId = 0;
+    // Render passes (BufferA, BufferB, BufferC, BufferD, Image)
+    std::vector<RenderPass> mPasses;
 };
 
 #endif  // CORE_RENDERER_H_
+

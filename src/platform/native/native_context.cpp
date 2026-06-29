@@ -183,7 +183,6 @@ bool NativeContext::Init() {
     deviceDesc.requiredFeatureCount = requiredFeatures.size();
     deviceDesc.requiredFeatures = requiredFeatures.data();
 
-    // Setup uncaptured error callback for validation feedback
     deviceDesc.uncapturedErrorCallbackInfo.callback = [](WGPUDevice const* device,
                                                          WGPUErrorType type, WGPUStringView message,
                                                          void* userdata1, void* userdata2) {
@@ -196,6 +195,20 @@ bool NativeContext::Init() {
         std::cerr << std::endl;
     };
     deviceDesc.uncapturedErrorCallbackInfo.userdata1 = nullptr;
+
+    // Setup device lost callback
+    deviceDesc.deviceLostCallbackInfo.callback = [](WGPUDevice const* device,
+                                                     WGPUDeviceLostReason reason, WGPUStringView message,
+                                                     void* userdata1, void* userdata2) {
+        std::cerr << "WebGPU Device Lost (Reason " << reason << "): ";
+        if (message.data && message.length > 0) {
+            std::cerr.write(message.data, message.length);
+        } else {
+            std::cerr << "Unknown reason";
+        }
+        std::cerr << std::endl;
+    };
+    deviceDesc.deviceLostCallbackInfo.userdata1 = nullptr;
 
     struct DeviceRequestResult {
         WGPUDevice device = nullptr;

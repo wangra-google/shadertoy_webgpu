@@ -55,9 +55,62 @@ fn main(input : VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(col, 1.0);
 }`;
 
-/**
- * Heuristic helper to detect whether a shader code string is GLSL or WGSL.
- */
+const BUFFER_WGSL_TEMPLATE = (passName: string) => `struct ShadertoyUniforms {
+    iResolution : vec3<f32>,
+    iTime       : f32,
+    iTimeDelta  : f32,
+    iFrameRate  : f32,
+    iFrame      : i32,
+    pad0        : u32,
+    iMouse      : vec4<f32>,
+    iDate       : vec4<f32>,
+};
+
+struct CameraUniforms {
+    uViewProj       : mat4x4<f32>,
+    uModel          : mat4x4<f32>,
+    uNormalMatrix   : mat4x4<f32>,
+    uCameraPosition : vec3<f32>,
+    padding         : f32,
+};
+
+@group(0) @binding(0) var<uniform> u_shadertoy : ShadertoyUniforms;
+@group(0) @binding(1) var<uniform> u_camera    : CameraUniforms;
+
+@group(1) @binding(0) var s_sampler  : sampler;
+@group(1) @binding(1) var iChannel0 : texture_2d<f32>;
+@group(1) @binding(2) var iChannel1 : texture_2d<f32>;
+@group(1) @binding(3) var iChannel2 : texture_2d<f32>;
+@group(1) @binding(4) var iChannel3 : texture_2d<f32>;
+
+struct VertexOutput {
+    @builtin(position) position : vec4<f32>,
+    @location(0) normal   : vec3<f32>,
+    @location(1) uv       : vec2<f32>,
+    @location(2) worldPos : vec3<f32>,
+};
+
+@fragment
+fn main(input : VertexOutput) -> @location(0) vec4<f32> {
+    let uv = input.uv;
+    
+    // Simple feedback or procedural generator for ${passName}
+    let col = vec3<f32>(uv.x, uv.y, 0.5 + 0.5 * sin(u_shadertoy.iTime));
+    
+    return vec4<f32>(col, 1.0);
+}`;
+
+const BUFFER_GLSL_TEMPLATE = (passName: string) => `void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / iResolution.xy;
+    
+    // Simple feedback or procedural generator for ${passName}
+    vec3 col = vec3(uv.x, uv.y, 0.5 + 0.5 * sin(iTime));
+    
+    fragColor = vec4(col, 1.0);
+}`;
+
+const PASS_NAMES = ['BufferA', 'BufferB', 'BufferC', 'BufferD', 'Image'];
+
 const detectLanguage = (code: string): 'glsl' | 'wgsl' => {
   const cleanCode = code
     .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -91,9 +144,72 @@ const detectLanguage = (code: string): 'glsl' | 'wgsl' => {
   return wgslScore >= glslScore ? 'wgsl' : 'glsl';
 };
 
+const generateNoiseTexture = () => {
+  const size = 256 * 256 * 4;
+  const data = new Uint8Array(size);
+  for (let i = 0; i < size; i += 4) {
+    const val = Math.floor(Math.random() * 256);
+    data[i] = val;
+    data[i + 1] = val;
+    data[i + 2] = val;
+    data[i + 3] = 255;
+  }
+  return data;
+};
+
+const generateCheckerboardTexture = () => {
+  const size = 256 * 256 * 4;
+  const data = new Uint8Array(size);
+  for (let y = 0; y < 256; ++y) {
+    for (let x = 0; x < 256; ++x) {
+      const i = (y * 256 + x) * 4;
+      const checkX = Math.floor(x / 16) % 2;
+      const checkY = Math.floor(y / 16) % 2;
+      const val = (checkX ^ checkY) ? 255 : 0;
+      data[i] = val;
+      data[i + 1] = val;
+      data[i + 2] = val;
+      data[i + 3] = 255;
+    }
+  }
+  return data;
+};
+
 export default function App() {
-  const [code, setCode] = useState(DEFAULT_WGSL);
-  const [language, setLanguage] = useState<'glsl' | 'wgsl'>('wgsl');
+  const [activePass, setActivePass] = useState<string>('Image');
+  
+  const [passCode, setPassCode] = useState<Record<string, string>>({
+    BufferA: BUFFER_WGSL_TEMPLATE('BufferA'),
+    BufferB: BUFFER_WGSL_TEMPLATE('BufferB'),
+    BufferC: BUFFER_WGSL_TEMPLATE('BufferC'),
+    BufferD: BUFFER_WGSL_TEMPLATE('BufferD'),
+    Image: DEFAULT_WGSL
+  });
+
+  const [passLanguage, setPassLanguage] = useState<Record<string, 'glsl' | 'wgsl'>>({
+    BufferA: 'wgsl',
+    BufferB: 'wgsl',
+    BufferC: 'wgsl',
+    BufferD: 'wgsl',
+    Image: 'wgsl'
+  });
+
+  const [passEnabled, setPassEnabled] = useState<Record<string, boolean>>({
+    BufferA: false,
+    BufferB: false,
+    BufferC: false,
+    BufferD: false,
+    Image: true
+  });
+
+  const [passInputs, setPassInputs] = useState<Record<string, string[]>>({
+    BufferA: ['', '', '', ''],
+    BufferB: ['', '', '', ''],
+    BufferC: ['', '', '', ''],
+    BufferD: ['', '', '', ''],
+    Image: ['', '', '', '']
+  });
+
   const [geometryType, setGeometryType] = useState<number>(0); // 0: Quad, 1: Cube, 2: Sphere
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [isCompiling, setIsCompiling] = useState(false);
@@ -113,28 +229,29 @@ export default function App() {
       reader.onload = (event) => {
         const content = event.target?.result as string;
         if (content) {
-          setCode(content);
+          // Update active pass code
+          setPassCode(prev => ({
+            ...prev,
+            [activePass]: content
+          }));
           
-          // Auto-detect language based on file extension or heuristics
-          let targetLang: 'glsl' | 'wgsl' = language;
+          let targetLang: 'glsl' | 'wgsl' = passLanguage[activePass];
           if (extension === 'wgsl') {
             targetLang = 'wgsl';
-            setLanguage('wgsl');
-            addLog(`Imported WGSL shader from ${fileName}`, "info");
+            setPassLanguage(prev => ({ ...prev, [activePass]: 'wgsl' }));
+            addLog(`Imported WGSL shader to ${activePass} from ${fileName}`, "info");
           } else if (extension === 'glsl') {
             targetLang = 'glsl';
-            setLanguage('glsl');
-            addLog(`Imported GLSL shader from ${fileName}`, "info");
+            setPassLanguage(prev => ({ ...prev, [activePass]: 'glsl' }));
+            addLog(`Imported GLSL shader to ${activePass} from ${fileName}`, "info");
           } else if (extension === 'txt') {
             targetLang = detectLanguage(content);
-            setLanguage(targetLang);
+            setPassLanguage(prev => ({ ...prev, [activePass]: targetLang }));
             addLog(`Imported .txt file. Auto-detected language as ${targetLang.toUpperCase()}`, "info");
-          } else {
-            addLog(`Imported shader from ${fileName}`, "info");
           }
 
-          // Compile immediately with the new content and target language
-          handleCompile(content, targetLang);
+          // Compile immediately
+          handleCompile(content, targetLang, activePass);
         }
       };
       reader.readAsText(file);
@@ -151,19 +268,20 @@ export default function App() {
     const files = e.target.files;
     if (files && files.length > 0) {
       importShaderFile(files[0]);
-      // Reset the value so the same file can be selected again
       e.target.value = '';
     }
   };
 
   const handleSaveClick = () => {
     try {
+      const code = passCode[activePass];
+      const language = passLanguage[activePass];
       const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       
       const a = document.createElement('a');
       a.href = url;
-      a.download = `shader.${language}`;
+      a.download = `${activePass}.${language}`;
       
       document.body.appendChild(a);
       a.click();
@@ -171,7 +289,7 @@ export default function App() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      addLog(`Saved current shader as shader.${language}`, "info");
+      addLog(`Saved ${activePass} shader as ${activePass}.${language}`, "info");
     } catch (err: any) {
       console.error("Failed to save file:", err);
       addLog(`Failed to save shader file: ${err.message || err}`, "error");
@@ -213,7 +331,6 @@ export default function App() {
     }
   };
 
-  // Helper to add logs programmatically
   const addLog = (text: string, type: 'info' | 'error' | 'warning') => {
     if (!text.trim()) return;
     setLogs(prev => [
@@ -227,18 +344,7 @@ export default function App() {
     ]);
   };
 
-  // 1. Initialize the GLSL to WGSL compiler & Emscripten logs
   useEffect(() => {
-    // Diagnostic fetch to verify WASM file accessibility
-    fetch('/glslang.wasm')
-      .then(res => {
-        console.log("Diagnostic fetch /glslang.wasm status:", res.status, res.statusText);
-      })
-      .catch(err => {
-        console.error("Diagnostic fetch /glslang.wasm failed:", err);
-      });
-
-    // Initialize compiler
     initCompiler('/glslang.wasm', '/twgsl.wasm')
       .then(() => {
         setCompilerReady(true);
@@ -249,7 +355,6 @@ export default function App() {
         addLog(`Compiler initialization failed: ${err.message || err}`, "error");
       });
 
-    // Capture Emscripten stdout/stderr logs via window callback
     (window as any).onWasmLog = (text: string, type: 'info' | 'warning' | 'error') => {
       addLog(text, type);
     };
@@ -259,16 +364,80 @@ export default function App() {
     };
   }, []);
 
-  // Handle language changes
-  const handleLanguageChange = (lang: 'glsl' | 'wgsl') => {
-    setLanguage(lang);
-    setCode(lang === 'glsl' ? DEFAULT_GLSL : DEFAULT_WGSL);
-    addLog(`Switched language to ${lang.toUpperCase()}`, "info");
+  const handleCodeChange = (newCode: string) => {
+    setPassCode(prev => ({
+      ...prev,
+      [activePass]: newCode
+    }));
   };
 
-  // Helper to extract the entry point function name for a given shader stage in WGSL
+  const handleLanguageChange = (lang: 'glsl' | 'wgsl') => {
+    setPassLanguage(prev => ({
+      ...prev,
+      [activePass]: lang
+    }));
+    
+    setPassCode(prev => {
+      const currentCode = prev[activePass];
+      const isDefaultWgsl = currentCode === DEFAULT_WGSL || currentCode.includes('BUFFER_WGSL_TEMPLATE') || currentCode.includes('feedback or procedural generator');
+      const isDefaultGlsl = currentCode === DEFAULT_GLSL || currentCode.includes('void mainImage');
+      
+      if (isDefaultWgsl || isDefaultGlsl) {
+        if (activePass === 'Image') {
+          return {
+            ...prev,
+            Image: lang === 'glsl' ? DEFAULT_GLSL : DEFAULT_WGSL
+          };
+        } else {
+          return {
+            ...prev,
+            [activePass]: lang === 'glsl' ? BUFFER_GLSL_TEMPLATE(activePass) : BUFFER_WGSL_TEMPLATE(activePass)
+          };
+        }
+      }
+      return prev;
+    });
+  };
+
+  const handlePassToggle = (passName: string) => {
+    setPassEnabled(prev => {
+      const nextEnabled = !prev[passName];
+      
+      if (engineRef.current) {
+        engineRef.current.set_pass_enabled(passName, nextEnabled);
+      }
+
+      if (nextEnabled) {
+        // Compile immediately on enable
+        setTimeout(() => {
+          handleCompile(passCode[passName], passLanguage[passName], passName);
+        }, 50);
+      }
+      
+      return {
+        ...prev,
+        [passName]: nextEnabled
+      };
+    });
+  };
+
+  const handleInputChange = (passName: string, channel: number, value: string) => {
+    setPassInputs(prev => {
+      const nextInputs = [...(prev[passName] || ['', '', '', ''])];
+      nextInputs[channel] = value;
+      
+      if (engineRef.current) {
+        engineRef.current.set_pass_input(passName, channel, value);
+      }
+      
+      return {
+        ...prev,
+        [passName]: nextInputs
+      };
+    });
+  };
+
   const findEntryPoint = (wgslCode: string, stage: 'fragment' | 'vertex'): string => {
-    // Strip block and line comments to avoid matching commented-out entry points
     const cleanCode = wgslCode
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/\/\/.*/g, '');
@@ -278,45 +447,54 @@ export default function App() {
     if (match && match[1]) {
       return match[1];
     }
-    return "main"; // fallback
+    return "main";
   };
 
-  // Compile and update the shader in the engine
-  const handleCompile = async (overrideCode?: string, overrideLanguage?: 'glsl' | 'wgsl') => {
+  const handleCompile = async (overrideCode?: string, overrideLanguage?: 'glsl' | 'wgsl', targetPassName?: string) => {
     if (!engineRef.current) {
       addLog("Cannot compile: WebGPU rendering engine is not initialized yet.", "error");
       return;
     }
 
-    const activeLanguage = overrideLanguage !== undefined ? overrideLanguage : language;
-    const activeCode = overrideCode !== undefined ? overrideCode : code;
+    const targetPass = (typeof targetPassName === 'string') ? targetPassName : activePass;
+    const activeLanguage = (typeof overrideLanguage === 'string') ? overrideLanguage : passLanguage[targetPass];
+    const activeCode = (typeof overrideCode === 'string') ? overrideCode : passCode[targetPass];
+
+    console.log("handleCompile Debug:", {
+      targetPass,
+      activeLanguage,
+      activeCodeType: typeof activeCode,
+      activeCodeVal: activeCode
+    });
 
     setIsCompiling(true);
-    addLog(`Compiling ${activeLanguage.toUpperCase()} shader...`, "info");
+    addLog(`Compiling ${activeLanguage.toUpperCase()} shader for ${targetPass}...`, "info");
 
     try {
+      if (typeof targetPass !== 'string') {
+        throw new Error(`targetPass is not a string! Got: ${typeof targetPass}`);
+      }
+      if (typeof activeCode !== 'string') {
+        throw new Error(`activeCode is not a string! Got: ${typeof activeCode}`);
+      }
+      if (typeof activeLanguage !== 'string') {
+        throw new Error(`activeLanguage is not a string! Got: ${typeof activeLanguage}`);
+      }
+
       let wgslCode = activeCode;
 
-      // 1. If GLSL, compile to WGSL first
       if (activeLanguage === 'glsl') {
         if (!compilerReady) {
           throw new Error("GLSL compiler is still loading. Please wait.");
         }
-        
-        // Wrap the GLSL code first (or let C++ wrap it? No, in Web, C++ does not support GLSL compilation,
-        // so we must wrap it in JS and compile the full shader).
-        // Let's get the wrapped GLSL code from the engine!
         const wrappedGlsl = engineRef.current.get_wrapped_glsl(activeCode);
         wgslCode = compileGLSLToWGSL(wrappedGlsl, 'fragment');
       }
 
-      // Find the entry point name dynamically from the WGSL code
       const entryPoint = findEntryPoint(wgslCode, 'fragment');
 
-      // 2. Upload the WGSL shader to the engine, passing a callback
-      // Signature: update_shader(passName, shaderSource, language, stage, entryPoint, isShadertoy, callback)
       engineRef.current.update_shader(
-        "Image",
+        targetPass,
         wgslCode,
         "wgsl",
         "fragment",
@@ -325,9 +503,9 @@ export default function App() {
         (success: boolean, errorMsg: string) => {
           setIsCompiling(false);
           if (success) {
-            addLog("Shader compiled and updated successfully.", "info");
+            addLog(`Shader for ${targetPass} compiled and updated successfully.`, "info");
           } else {
-            addLog(`Shader compilation failed: ${errorMsg}`, "error");
+            addLog(`Shader compilation for ${targetPass} failed: ${errorMsg}`, "error");
           }
         }
       );
@@ -341,8 +519,17 @@ export default function App() {
   const handleEngineReady = (engine: any) => {
     engineRef.current = engine;
     addLog("WebGPU rendering engine ready.", "info");
+
+    // 1. Generate and load static textures
+    const noiseData = generateNoiseTexture();
+    engine.load_texture_data("Noise", noiseData, 256, 256, "linear");
     
-    // Compile the initial shader immediately once the engine is ready
+    const checkerboardData = generateCheckerboardTexture();
+    engine.load_texture_data("Checkerboard", checkerboardData, 256, 256, "linear");
+    
+    addLog("Static textures (Noise, Checkerboard) uploaded to GPU.", "info");
+
+    // 2. Compile enabled passes (initially only Image is enabled)
     setTimeout(() => {
       handleCompile();
     }, 100);
@@ -376,7 +563,6 @@ export default function App() {
         zIndex: 10
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {/* Logo / Icon */}
           <div style={{
             width: '32px',
             height: '32px',
@@ -399,11 +585,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Header Status & Toolbar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          {/* File Operations */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {/* Load Button */}
             <button
               onClick={handleLoadClick}
               title="Load Shader from File (.glsl, .wgsl, .txt)"
@@ -438,7 +621,6 @@ export default function App() {
               Load File
             </button>
 
-            {/* Hidden Input for File Picker */}
             <input
               type="file"
               ref={fileInputRef}
@@ -447,7 +629,6 @@ export default function App() {
               style={{ display: 'none' }}
             />
 
-            {/* Save Button */}
             <button
               onClick={handleSaveClick}
               title="Save Current Shader to File"
@@ -485,7 +666,6 @@ export default function App() {
 
           <div style={{ height: '20px', width: '1px', background: 'var(--border)' }} />
 
-          {/* Engine Status */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem' }}>
             <span style={{
               width: '8px',
@@ -522,12 +702,17 @@ export default function App() {
         }}>
           <div style={{ flex: 1.8, overflow: 'hidden' }}>
             <Editor
-              value={code}
-              onChange={setCode}
+              value={passCode[activePass] || ''}
+              onChange={handleCodeChange}
               onCompile={handleCompile}
-              language={language}
+              language={passLanguage[activePass] || 'wgsl'}
               onLanguageChange={handleLanguageChange}
               isCompiling={isCompiling}
+              passes={PASS_NAMES}
+              activePass={activePass}
+              onActivePassChange={setActivePass}
+              passEnabled={passEnabled}
+              onPassToggle={handlePassToggle}
             />
           </div>
           <div style={{ flex: 0.9, overflow: 'hidden', minHeight: '180px' }}>
@@ -546,9 +731,8 @@ export default function App() {
           height: '100%',
           overflow: 'hidden'
         }}>
-          {/* Viewport Card */}
           <div className="glass-panel" style={{
-            flex: 1,
+            flex: 1.2,
             borderRadius: '16px',
             overflow: 'hidden',
             boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.2)',
@@ -563,83 +747,136 @@ export default function App() {
             </div>
           </div>
 
-          {/* Geometry Selector Card */}
-          <div className="glass-panel animate-slide-in" style={{
-            padding: '20px',
-            borderRadius: '16px',
+          {/* Controls Panel */}
+          <div style={{
+            flex: 0.8,
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px',
-            boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.1)'
+            gap: '20px',
+            overflowY: 'auto'
           }}>
-            <h3 style={{ fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-              Geometry Controls
-            </h3>
-            
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr',
-              gap: '10px'
+            {/* Geometry Selector Card */}
+            <div className="glass-panel animate-slide-in" style={{
+              padding: '20px',
+              borderRadius: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.1)'
             }}>
-              <button
-                onClick={() => setGeometryType(0)}
-                className={`glow-on-hover`}
-                style={{
-                  background: geometryType === 0 ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.03)',
-                  border: '1px solid ' + (geometryType === 0 ? 'var(--accent-color)' : 'var(--border)'),
-                  color: '#fff',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  transition: 'all 0.2s',
-                  boxShadow: geometryType === 0 ? '0 0 15px var(--accent-glow)' : 'none'
-                }}
-              >
-                2D Quad
-              </button>
-              <button
-                onClick={() => setGeometryType(1)}
-                className={`glow-on-hover`}
-                style={{
-                  background: geometryType === 1 ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.03)',
-                  border: '1px solid ' + (geometryType === 1 ? 'var(--accent-color)' : 'var(--border)'),
-                  color: '#fff',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  transition: 'all 0.2s',
-                  boxShadow: geometryType === 1 ? '0 0 15px var(--accent-glow)' : 'none'
-                }}
-              >
-                3D Cube
-              </button>
-              <button
-                onClick={() => setGeometryType(2)}
-                className={`glow-on-hover`}
-                style={{
-                  background: geometryType === 2 ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.03)',
-                  border: '1px solid ' + (geometryType === 2 ? 'var(--accent-color)' : 'var(--border)'),
-                  color: '#fff',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  transition: 'all 0.2s',
-                  boxShadow: geometryType === 2 ? '0 0 15px var(--accent-glow)' : 'none'
-                }}
-              >
-                3D Sphere
-              </button>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                Geometry Controls
+              </h3>
+              
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr',
+                gap: '10px'
+              }}>
+                <button
+                  onClick={() => setGeometryType(0)}
+                  className={`glow-on-hover`}
+                  style={{
+                    background: geometryType === 0 ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.03)',
+                    border: '1px solid ' + (geometryType === 0 ? 'var(--accent-color)' : 'var(--border)'),
+                    color: '#fff',
+                    padding: '12px',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    transition: 'all 0.2s',
+                    boxShadow: geometryType === 0 ? '0 0 15px var(--accent-glow)' : 'none'
+                  }}
+                >
+                  2D Quad
+                </button>
+                <button
+                  onClick={() => setGeometryType(1)}
+                  className={`glow-on-hover`}
+                  style={{
+                    background: geometryType === 1 ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.03)',
+                    border: '1px solid ' + (geometryType === 1 ? 'var(--accent-color)' : 'var(--border)'),
+                    color: '#fff',
+                    padding: '12px',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    transition: 'all 0.2s',
+                    boxShadow: geometryType === 1 ? '0 0 15px var(--accent-glow)' : 'none'
+                  }}
+                >
+                  3D Cube
+                </button>
+                <button
+                  onClick={() => setGeometryType(2)}
+                  className={`glow-on-hover`}
+                  style={{
+                    background: geometryType === 2 ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.03)',
+                    border: '1px solid ' + (geometryType === 2 ? 'var(--accent-color)' : 'var(--border)'),
+                    color: '#fff',
+                    padding: '12px',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    transition: 'all 0.2s',
+                    boxShadow: geometryType === 2 ? '0 0 15px var(--accent-glow)' : 'none'
+                  }}
+                >
+                  3D Sphere
+                </button>
+              </div>
             </div>
-            
-            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-              * Choose between a fullscreen 2D screen-space shader or custom 3D vertex displacements mapped onto standard procedural models.
-            </p>
+
+            {/* Pass Inputs Card */}
+            <div className="glass-panel animate-slide-in" style={{
+              padding: '20px',
+              borderRadius: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.1)'
+            }}>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                Pass Inputs ({activePass})
+              </h3>
+              
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '12px'
+              }}>
+                {[0, 1, 2, 3].map((channel) => (
+                  <div key={channel} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>iChannel{channel}</span>
+                    <select
+                      value={passInputs[activePass]?.[channel] || ''}
+                      onChange={(e) => handleInputChange(activePass, channel, e.target.value)}
+                      style={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid var(--border)',
+                        color: '#fff',
+                        padding: '8px',
+                        borderRadius: '8px',
+                        fontSize: '0.8rem',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="">None</option>
+                      <option value="BufferA">Buffer A</option>
+                      <option value="BufferB">Buffer B</option>
+                      <option value="BufferC">Buffer C</option>
+                      <option value="BufferD">Buffer D</option>
+                      <option value="Noise">Noise (Static)</option>
+                      <option value="Checkerboard">Checkerboard (Static)</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </main>

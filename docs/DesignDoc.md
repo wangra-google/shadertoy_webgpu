@@ -145,12 +145,32 @@ struct CameraUniforms {
 #### Bind Group 1: Samplers & Channel Textures (Pass Resources)
 Binds the static texture assets, buffer feedback loops, or mesh offscreen passes.
 
+##### WGSL Shader Syntax
+In WGSL, you must **explicitly declare** the sampler and textures at the top of your shader file:
 ```wgsl
 @group(1) @binding(0) var s_sampler  : sampler;
 @group(1) @binding(1) var iChannel0 : texture_2d<f32>;
 @group(1) @binding(2) var iChannel1 : texture_2d<f32>;
 @group(1) @binding(3) var iChannel2 : texture_2d<f32>;
 @group(1) @binding(4) var iChannel3 : texture_2d<f32>;
+
+// To sample:
+let color = textureSample(iChannel0, s_sampler, uv);
+```
+
+##### GLSL Shader Syntax
+In GLSL, you **do NOT need to declare** `iChannel0..3` or `s_sampler`. The engine automatically injects the bindings at compile time. You can write your shader exactly like you would on Shadertoy:
+```glsl
+// To sample:
+vec4 color = texture(iChannel0, uv);
+```
+Under the hood, the engine prepends these declarations to your GLSL code:
+```glsl
+layout(set = 1, binding = 0) uniform sampler s_sampler;
+layout(set = 1, binding = 1) uniform texture2D iChannel0;
+layout(set = 1, binding = 2) uniform texture2D iChannel1;
+layout(set = 1, binding = 3) uniform texture2D iChannel2;
+layout(set = 1, binding = 4) uniform texture2D iChannel3;
 ```
 
 #### Bind Group 2: Storage Buffers (Compute / ML Passes)
@@ -182,6 +202,120 @@ Required for the offscreen mesh pass.
 
 #### Staging Buffer (Screenshot / Headless Staging)
 * **Staging Buffer**: CPU-mapped buffer with `wgpu::BufferUsage::MapRead | wgpu::BufferUsage::CopyDst` to extract frames in headless CLI runs.
+
+### 4. Offscreen Pass Buffers (Buffer A..D) & Feedback Loops
+
+To support complex visual effects, simulations, and multi-stage post-processing, the studio provides four offscreen render passes: **Buffer A**, **Buffer B**, **Buffer C**, and **Buffer D**, in addition to the final **Image** (screen) pass.
+
+#### What are Buffers A, B, C, D?
+Each buffer is an offscreen texture (render target) with the same resolution as the viewport (unless a custom size is specified in the scene manifest). 
+* When a buffer is **enabled**, the engine runs its fragment shader and renders the output into that buffer's texture instead of the screen.
+* The passes are executed sequentially in every frame: 
+  $$\text{Buffer A} \rightarrow \text{Buffer B} \rightarrow \text{Buffer C} \rightarrow \text{Buffer D} \rightarrow \text{Image}$$
+
+#### How to Use Buffers as Inputs (`iChannel0..3`)
+Any pass can bind the output of any *previously executed* buffer (or even its own output) to one of its input slots (`iChannel0..3`).
+* **Multi-Pass Pipeline Example (e.g., Bloom/Blur)**:
+  1. **Buffer A** renders the 3D scene.
+  2. **Buffer B** reads `Buffer A` as `iChannel0` and performs a horizontal blur.
+  3. **Buffer C** reads `Buffer B` as `iChannel0` and performs a vertical blur.
+  4. **Image** reads `Buffer A` (original scene) as `iChannel0` and `Buffer C` (blurred highlight) as `iChannel1`, combining them to produce a bloom effect.
+
+#### How Feedback Loops Work (Ping-Pong Buffering)
+If a buffer binds **itself** as an input (e.g., `Buffer A` reads `Buffer A` as `iChannel0`), it creates a **temporal feedback loop**. This is used for:
+* Fluid simulations and cellular automata.
+* Persistent particle physics.
+* Motion blur, light trails, and temporal anti-aliasing.
+
+To prevent WebGPU from reading and writing to the same texture simultaneously (which is a validation error), the engine allocates a **Ping-Pong pair** of textures for each buffer:
+1. **Read Texture**: Holds the output of the *previous* frame.
+2. **Write Texture**: The active render target for the *current* frame.
+
+During execution:
+* The shader reads historical data from the **Read Texture** via `iChannelX`.
+* The shader writes new data to the **Write Texture**.
+* At the end of the pass, the engine **swaps** the read and write textures so the newly rendered frame becomes the history for the next frame.
+
+#### WGSL & GLSL Shader Examples
+
+##### WGSL Feedback Example (Accumulation)
+```wgsl
+// In Buffer A: Accumulate color over time
+@group(1) @binding(1) var iChannel0 : texture_2d<f32>; // Bound to BufferA (self)
+@group(1) @binding(0) var s_sampler : sampler;
+
+@fragment
+fn main(input : VertexOutput) -> @location(0) vec4<f32> {
+    let uv = input.uv;
+    
+    // Read the previous frame's color
+    let prevColor = textureSample(iChannel0, s_sampler, uv);
+    
+    // Compute current frame's color (e.g. a moving circle)
+    let dist = distance(uv, vec2<f32>(0.5 + 0.2 * sin(u_shadertoy.iTime), 0.5));
+    let currentMask = select(0.0, 1.0, dist < 0.05);
+    let currentColor = vec4<f32>(currentMask, 0.0, 0.0, 1.0);
+    
+    // Blend them (90% history, 10% new frame) to create a trail effect
+    return mix(prevColor, currentColor, 0.1);
+}
+```
+
+##### GLSL Feedback Example (Accumulation)
+```glsl
+// In Buffer A: Accumulate color over time
+// iChannel0 is bound to Buffer A (self)
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / iResolution.xy;
+    
+    // Read previous frame
+    vec4 prevColor = texture(iChannel0, uv);
+    
+    // Compute current frame
+    float dist = distance(uv, vec2(0.5 + 0.2 * sin(iTime), 0.5));
+    vec4 currentColor = vec4(dist < 0.05 ? 1.0 : 0.0, 0.0, 0.0, 1.0);
+    
+    // Blend
+    fragColor = mix(prevColor, currentColor, 0.1);
+}
+```
+
+#### Texture Coordinates & Y-Inversion (GLSL vs WGSL)
+
+WebGPU uses a **Y-down** texture coordinate system (where `uv = (0,0)` is the top-left of the texture). This differs from OpenGL and Shadertoy, which use a **Y-up** coordinate system (where `uv = (0,0)` is the bottom-left).
+
+To ensure high compatibility with Shadertoy shaders while preserving WebGPU's native performance, the engine handles texture coordinates differently depending on the shader language:
+
+##### 1. GLSL Shader Behavior (Auto-Flipped)
+The GLSL compatibility header automatically flips the Y coordinate in the `texture()` macro. This makes texture sampling behave exactly like it does on Shadertoy:
+* **Offscreen Buffers (Buffer A..D)** and **external images** are sampled right-side up.
+* **Code Example**:
+  ```glsl
+  void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+      vec2 uv = fragCoord / iResolution.xy;
+      // The macro automatically translates this to sample with (uv.x, 1.0 - uv.y)
+      vec4 color = texture(iChannel0, uv);
+      fragColor = color;
+  }
+  ```
+
+##### 2. WGSL Shader Behavior (Native WebGPU Y-Down)
+WGSL shaders compile directly to WebGPU without a compatibility macro wrapper. They follow native WebGPU conventions:
+* **Offscreen Buffers (Buffer A..D)** will appear **vertically inverted** when sampled with the standard screen UVs.
+* **To correct the inversion in WGSL**, you must manually flip the Y coordinate:
+  ```wgsl
+  @group(1) @binding(1) var iChannel0 : texture_2d<f32>;
+  @group(1) @binding(0) var s_sampler : sampler;
+
+  @fragment
+  fn main(input : VertexOutput) -> @location(0) vec4<f32> {
+      let uv = input.uv;
+      // Manually flip Y for WebGPU offscreen textures
+      let flippedUV = vec2<f32>(uv.x, 1.0 - uv.y);
+      let color = textureSample(iChannel0, s_sampler, flippedUV);
+      return color;
+  }
+  ```
 
 ---
 

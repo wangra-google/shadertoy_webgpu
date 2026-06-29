@@ -24,6 +24,16 @@ layout(set = 0, binding = 0) uniform ShadertoyUniforms {
     vec4 iDate;
 };
 
+layout(set = 1, binding = 0) uniform sampler s_sampler;
+layout(set = 1, binding = 1) uniform texture2D iChannel0;
+layout(set = 1, binding = 2) uniform texture2D iChannel1;
+layout(set = 1, binding = 3) uniform texture2D iChannel2;
+layout(set = 1, binding = 4) uniform texture2D iChannel3;
+
+// Macro mapping WebGL-style sampler2D access to Vulkan/WebGPU separate texture/sampler bindings,
+// and automatically flipping the Y coordinate to match Shadertoy's Y-up texture space.
+#define texture(tex, uv_coord) texture(sampler2D(tex, s_sampler), vec2((uv_coord).x, 1.0 - (uv_coord).y))
+
 // User entry point declaration
 void mainImage(out vec4 fragColor, in vec2 fragCoord);
 
@@ -37,3 +47,4 @@ void main() {
 )";
 
 #endif  // CORE_SHADERTOY_COMPAT_H_
+

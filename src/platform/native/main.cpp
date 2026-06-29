@@ -140,6 +140,7 @@ int main(int argc, char* argv[]) {
         bool compileSuccess = false;
 
         renderer->UpdateShader(
+            "Image",
             shaderSource, 
             language, 
             ShaderStage::Fragment, 
@@ -182,7 +183,11 @@ int main(int argc, char* argv[]) {
     float currentFps = 60.0f;
 
     // Render loop
+    const std::chrono::microseconds targetFrameDuration(16666); // ~60 FPS (16.67ms)
+
     while (!context->ShouldClose()) {
+        auto frameStartTime = std::chrono::high_resolution_clock::now();
+
         context->PollEvents();
 
         auto now = std::chrono::high_resolution_clock::now();
@@ -199,7 +204,7 @@ int main(int argc, char* argv[]) {
             fpsFrameCount = 0;
         }
 
-        // Handle mouse inputs (dummy values for CLI context in Phase 1)
+        // Handle mouse inputs
         double mouseX = 0.0, mouseY = 0.0;
         glfwGetCursorPos(context->GetWindow(), &mouseX, &mouseY);
         float mouseXF = static_cast<float>(mouseX);
@@ -218,8 +223,21 @@ int main(int argc, char* argv[]) {
         renderer->Render();
         frameCount++;
 
-        // Cap frame rate slightly to avoid consuming 100% CPU thread in idle loops
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // Precise frame rate pacing:
+        // Sleep for the bulk of the remaining time to save CPU, then spin-wait for sub-millisecond precision.
+        auto frameEndTime = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(frameEndTime - frameStartTime);
+        if (elapsed < targetFrameDuration) {
+            auto remaining = targetFrameDuration - elapsed;
+            // Sleep if we have more than 2ms remaining
+            if (remaining > std::chrono::milliseconds(2)) {
+                std::this_thread::sleep_for(remaining - std::chrono::milliseconds(2));
+            }
+            // Spin-wait/yield for the final 2ms to hit the target precisely
+            while (std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - frameStartTime) < targetFrameDuration) {
+                std::this_thread::yield();
+            }
+        }
     }
 
     // Cleanup resources

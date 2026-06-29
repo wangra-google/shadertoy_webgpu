@@ -19,6 +19,8 @@ if(EMSCRIPTEN)
         src/core/mesh.h
         src/core/renderer.cpp
         src/core/renderer.h
+        src/core/texture_manager.cpp
+        src/core/texture_manager.h
         src/core/graphics_context.h
         src/core/math_utils.h
         src/platform/web/web_context.cpp
@@ -33,6 +35,8 @@ if(EMSCRIPTEN)
         src/core/mesh.h
         src/core/renderer.cpp
         src/core/renderer.h
+        src/core/texture_manager.cpp
+        src/core/texture_manager.h
         src/core/graphics_context.h
         src/core/math_utils.h
         src/platform/web/web_context.cpp
@@ -115,6 +119,8 @@ else()
         src/core/mesh.h
         src/core/renderer.cpp
         src/core/renderer.h
+        src/core/texture_manager.cpp
+        src/core/texture_manager.h
         src/core/graphics_context.h
         src/core/math_utils.h
         src/platform/native/native_context.cpp
@@ -136,6 +142,8 @@ else()
         src/core/mesh.h
         src/core/renderer.cpp
         src/core/renderer.h
+        src/core/texture_manager.cpp
+        src/core/texture_manager.h
         src/core/graphics_context.h
         src/core/math_utils.h
         src/platform/native/native_context.cpp
