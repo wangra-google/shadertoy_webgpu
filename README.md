@@ -6,7 +6,65 @@ This project supports two compilation targets:
 1. **Native Desktop Target** (Windows, macOS, Linux)
 2. **WebAssembly / HTML5 Target** (Runs in any WebGPU-enabled web browser)
 
+
 ---
+
+## Project Structure
+
+Here is the directory layout of the project, including the core C++ rendering engine and the React + Vite frontend:
+
+```text
+├── src/                      # C++ Engine Source
+│   ├── core/                 # Platform-agnostic core rendering engine
+│   │   ├── config.h          # Global configuration constants
+│   │   ├── graphics_context.h # Abstract GraphicsContext interface
+│   │   ├── math_utils.h      # 3D math structures (Vec3, Mat4) and utilities
+│   │   ├── mesh.h / .cpp     # Procedural mesh generation (Quad, Cube, Sphere) and buffers
+│   │   ├── renderer.h / .cpp # Main WebGPU rendering pipeline & pass management
+│   │   ├── shadertoy_compat.h # GLSL Shadertoy compatibility header & macros
+│   │   └── texture_manager.h / .cpp # Texture allocation and ping-pong buffering
+│   └── platform/             # Platform-specific integration layers
+│       ├── native/           # Native Desktop integration (Dawn, GLFW, glslang + Tint)
+│       │   ├── main.cpp      # Desktop entry point, render loop, and input handling
+│       │   ├── native_context.h / .cpp # Desktop GLFW window and Dawn WebGPU context
+│       │   └── shader_compiler.h / .cpp # Offline GLSL to WGSL shader translator
+│       └── web/              # Web platform integration (Emscripten WebAssembly)
+│           ├── bindings.cpp  # Emscripten bindings exporting EngineCore to JS
+│           ├── index.html    # Simple standalone HTML mockup
+│           └── web_context.h / .cpp # Browser WebGPU surface and context management
+│
+└── web/                      # React + Vite Frontend Dashboard
+    ├── public/               # Static assets and compiled WASM binaries (engine, glslang, twgsl)
+    ├── src/                  # React TypeScript source code
+    │   ├── components/       # UI components (Viewport, Editor, Diagnostics console)
+    │   │   ├── Viewport.tsx  # Canvas hosting the WebGPU canvas & render loop
+    │   │   ├── Editor.tsx    # CodeMirror 6 editor supporting GLSL/WGSL and pass tabs
+    │   │   └── Diagnostics.tsx # Console panel displaying compilation log messages
+    │   ├── utils/            # Frontend utilities
+    │   │   ├── compiler.ts   # Client-side GLSL-to-WGSL compiler toolchain
+    │   │   └── consoleCapture.ts # Console log interceptor for glslang errors
+    │   ├── App.tsx           # Central React component managing state & orchestration
+    │   ├── index.css         # Styling tokens and global styling system
+    │   └── main.tsx          # Application entry point (initializes consoleCapture)
+    ├── copy-wasm.js          # Node script to copy WASM binaries from node_modules
+    ├── vite.config.ts        # Vite configuration (sets COOP/COEP headers for WASM)
+    └── package.json          # Frontend scripts and dependencies
+```
+
+For detailed explanations of each module, see the respective README files:
+- [src/README.md](file:///C:/src/shadertoy_webgpu/src/README.md)
+  - [src/core/README.md](file:///C:/src/shadertoy_webgpu/src/core/README.md)
+  - [src/platform/README.md](file:///C:/src/shadertoy_webgpu/src/platform/README.md)
+    - [src/platform/native/README.md](file:///C:/src/shadertoy_webgpu/src/platform/native/README.md)
+    - [src/platform/web/README.md](file:///C:/src/shadertoy_webgpu/src/platform/web/README.md)
+- [web/README.md](file:///C:/src/shadertoy_webgpu/web/README.md)
+  - [web/src/README.md](file:///C:/src/shadertoy_webgpu/web/src/README.md)
+    - [web/src/components/README.md](file:///C:/src/shadertoy_webgpu/web/src/components/README.md)
+    - [web/src/utils/README.md](file:///C:/src/shadertoy_webgpu/web/src/utils/README.md)
+  - [web/public/README.md](file:///C:/src/shadertoy_webgpu/web/public/README.md)
+
+---
+
 
 ## Prerequisites
 
