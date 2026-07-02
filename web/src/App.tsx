@@ -500,13 +500,6 @@ export default function App() {
     const activeLanguage = (typeof overrideLanguage === 'string') ? overrideLanguage : passLanguage[targetPass];
     const activeCode = (typeof overrideCode === 'string') ? overrideCode : passCode[targetPass];
 
-    console.log("handleCompile Debug:", {
-      targetPass,
-      activeLanguage,
-      activeCodeType: typeof activeCode,
-      activeCodeVal: activeCode
-    });
-
     setIsCompiling(true);
     addLog(`Compiling ${activeLanguage.toUpperCase()} shader for ${targetPass}...`, "info");
 

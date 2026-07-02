@@ -32,6 +32,7 @@ export function initCompiler(glslangWasmPath?: string, twgslWasmPath?: string): 
     // and binds directly to the global console object during initialization.
     // We temporarily monkey-patch the console before this call (in consoleCapture.ts)
     // and restore it immediately after.
+    console.log("Initializing glslang with options:", glslangOptions);
     const glslangModule = await (glslangInit as any)(glslangOptions);
     console.log("glslangModule resolved to:", glslangModule);
     glslang = glslangModule as Glslang;
@@ -42,6 +43,7 @@ export function initCompiler(glslangWasmPath?: string, twgslWasmPath?: string): 
     const globalTwgslInit = (window as any).twgsl;
     if (globalTwgslInit) {
       try {
+        console.log("Initializing twgsl with WASM path:", twgslWasmPath);
         const twgslModule = await globalTwgslInit(twgslWasmPath);
         twgsl = twgslModule as Twgsl;
         console.log("twgsl initialized successfully.");

@@ -218,10 +218,23 @@ To compile and bundle the React web application for production deployment from t
 ```bash
 npm --prefix web run build
 ```
-The optimized production assets will be outputted to the **`dist-web/`** folder in the project root. You can serve this folder using any static web server:
+The optimized production assets will be outputted to the **`dist-web/`** folder in the project root.
+
+To serve this folder, you can use any static web server. For example, using `http-server`:
 ```bash
 npx http-server dist-web -p 8080
 ```
+
+> [!IMPORTANT]
+> **WebGPU Secure Context Requirement**
+> WebGPU is only available in a **Secure Context**. When running the production build locally:
+> * **Access it via:** **`http://localhost:8080`** or **`http://127.0.0.1:8080`** (the browser trusts local loopback addresses).
+> * **Do NOT** access the app via your local network IP (e.g. `http://192.168.x.x:8080` or `http://100.x.x.x:8080`) over plain `http`. If you do, the browser will block WebGPU (`navigator.gpu` will be `undefined`).
+> * If you must access the app from another device on your network, you must serve it over HTTPS. For example, you can generate local SSL certificates and run:
+>   ```bash
+>   npx http-server dist-web -p 8080 -S -C cert.pem -K key.pem
+>   ```
+>   And then navigate to `https://<your-lan-ip>:8080`.
 
 ---
 

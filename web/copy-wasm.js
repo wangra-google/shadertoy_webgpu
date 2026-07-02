@@ -16,8 +16,10 @@ function copyFile(src, dest) {
     if (fs.existsSync(src)) {
       fs.copyFileSync(src, dest);
       console.log(`Successfully copied ${path.basename(src)} to ${dest}`);
+    } else if (fs.existsSync(dest)) {
+      console.warn(`Source file not found: ${src}, but destination already exists at ${dest}. Skipping.`);
     } else {
-      throw new Error(`Source file not found: ${src}`);
+      throw new Error(`Source file not found: ${src} and destination does not exist.`);
     }
   } catch (err) {
     console.error(`Error copying ${path.basename(src)}:`, err.message || err);
@@ -29,6 +31,15 @@ function copyFile(src, dest) {
 const glslangSrc = path.join(__dirname, 'node_modules', '@webgpu', 'glslang', 'dist', 'web-devel', 'glslang.wasm');
 const glslangDest = path.join(publicDir, 'glslang.wasm');
 copyFile(glslangSrc, glslangDest);
+
+// Copy glslang.wasm to public/assets because in the production build,
+// @webgpu/glslang looks for the wasm file relative to the bundled JS file (which is in assets/).
+const assetsDir = path.join(publicDir, 'assets');
+if (!fs.existsSync(assetsDir)) {
+  fs.mkdirSync(assetsDir, { recursive: true });
+}
+const glslangDestAssets = path.join(assetsDir, 'glslang.wasm');
+copyFile(glslangSrc, glslangDestAssets);
 
 // 2. Copy twgsl.js and twgsl.wasm from node_modules
 const twgslJsSrc = path.join(__dirname, 'node_modules', 'twgsl', 'dist', 'twgsl.js');

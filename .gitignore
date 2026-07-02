@@ -80,6 +80,7 @@ Testing/
 dist-web/
 web/node_modules/
 web/public/glslang.wasm
+web/public/assets/glslang.wasm
 web/public/engine_wasm.js
 web/public/engine_wasm.wasm
 web/public/twgsl.js
