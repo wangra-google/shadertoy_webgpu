@@ -55,22 +55,4 @@ Manages npm scripts and dependencies.
 ### [tsconfig.json](file:///C:/src/shadertoy_webgpu/web/tsconfig.json)
 Configures TypeScript compilation settings. It targets `ES2022`, uses modern `ESNext` module resolution, enables strict type checking, and configures React's JSX transform.
 
----
 
-## Setup and Development
-
-To run the web playground locally:
-
-1. Navigate to the `web` directory:
-   ```bash
-   cd web
-   ```
-2. Install dependencies (this will automatically trigger `copy-wasm.js` to copy the WASM files):
-   ```bash
-   npm install
-   ```
-3. Start the development server:
-   ```bash
-   npm run dev
-   ```
-4. Open your browser and navigate to `http://localhost:3000`.

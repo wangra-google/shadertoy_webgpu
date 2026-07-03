@@ -75,6 +75,7 @@ Testing/
 # Third-party dependencies managed by gclient
 /third_party/*
 !/third_party/.gclient
+!/third_party/CMakeLists.txt
 
 # Frontend Build and Dependency Artifacts
 dist-web/

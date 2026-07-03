@@ -10,6 +10,112 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <!-- Premium Favicon -->
     <link rel="icon" type="image/png" href="/favicon.png" />
+    
+    <!-- Workaround for TextDecoder and WebGPU resizable/shared ArrayBuffer error in modern browsers -->
+    <script>
+      (function() {
+        // Global scratch buffer to avoid GC thrashing when copying WebGPU data.
+        // We cap the scratch buffer size to prevent unbounded memory growth.
+        const SCRATCH_BUFFER_MAX_SIZE = 1024 * 1024; // 1MB cap
+        let scratchBuffer = null;
+
+        function getScratchView(data) {
+          const isDataView = data instanceof DataView;
+          const byteLength = data.byteLength;
+          
+          let buffer;
+          const useScratch = byteLength <= SCRATCH_BUFFER_MAX_SIZE;
+
+          if (useScratch) {
+            if (!scratchBuffer || scratchBuffer.byteLength < byteLength) {
+              const nextSize = Math.max(byteLength, (scratchBuffer ? scratchBuffer.byteLength * 1.5 : 65536));
+              const alignedSize = Math.ceil(nextSize / 16) * 16;
+              scratchBuffer = new ArrayBuffer(alignedSize);
+            }
+            buffer = scratchBuffer;
+          } else {
+            // Allocate a one-off buffer for large data so it can be garbage collected
+            buffer = new ArrayBuffer(byteLength);
+          }
+          
+          if (isDataView) {
+            const view = new DataView(buffer, 0, byteLength);
+            new Uint8Array(buffer, 0, byteLength).set(new Uint8Array(data.buffer, data.byteOffset, byteLength));
+            return view;
+          } else {
+            const view = new data.constructor(buffer, 0, data.length);
+            view.set(data);
+            return view;
+          }
+        }
+
+        // Helper to copy a raw ArrayBuffer or SharedArrayBuffer
+        function copyRawBuffer(buffer) {
+          const copy = new ArrayBuffer(buffer.byteLength);
+          new Uint8Array(copy).set(new Uint8Array(buffer));
+          return copy;
+        }
+
+        // Helper to check if a buffer is resizable or shared
+        function isResizableOrShared(buffer) {
+          return buffer && (
+            buffer.resizable || 
+            (typeof SharedArrayBuffer !== 'undefined' && buffer instanceof SharedArrayBuffer)
+          );
+        }
+
+        // 1. Patch TextDecoder.prototype.decode
+        const originalDecode = TextDecoder.prototype.decode;
+        TextDecoder.prototype.decode = function(input, options) {
+          if (input) {
+            const view = ArrayBuffer.isView(input)
+              ? input
+              : new Uint8Array(input);
+            if (isResizableOrShared(view.buffer)) {
+              const copy = new Uint8Array(view.byteLength);
+              copy.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+              return originalDecode.call(this, copy, options);
+            }
+          }
+          return originalDecode.call(this, input, options);
+        };
+
+        // 2. Patch GPUQueue.prototype.writeTexture and writeBuffer
+        if (typeof GPUQueue !== 'undefined') {
+          const originalWriteTexture = GPUQueue.prototype.writeTexture;
+          GPUQueue.prototype.writeTexture = function(destination, data, dataLayout, size) {
+            if (data) {
+              if (ArrayBuffer.isView(data)) {
+                if (isResizableOrShared(data.buffer)) {
+                  data = getScratchView(data);
+                }
+              } else if (data instanceof ArrayBuffer || (typeof SharedArrayBuffer !== 'undefined' && data instanceof SharedArrayBuffer)) {
+                if (isResizableOrShared(data)) {
+                  data = copyRawBuffer(data);
+                }
+              }
+            }
+            return originalWriteTexture.call(this, destination, data, dataLayout, size);
+          };
+
+          const originalWriteBuffer = GPUQueue.prototype.writeBuffer;
+          GPUQueue.prototype.writeBuffer = function(buffer, bufferOffset, data, dataOffset, size) {
+            if (data) {
+              if (ArrayBuffer.isView(data)) {
+                if (isResizableOrShared(data.buffer)) {
+                  data = getScratchView(data);
+                }
+              } else if (data instanceof ArrayBuffer || (typeof SharedArrayBuffer !== 'undefined' && data instanceof SharedArrayBuffer)) {
+                if (isResizableOrShared(data)) {
+                  data = copyRawBuffer(data);
+                }
+              }
+            }
+            return originalWriteBuffer.call(this, buffer, bufferOffset, data, dataOffset, size);
+          };
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

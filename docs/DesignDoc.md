@@ -329,7 +329,7 @@ During the technical planning process, we evaluated several alternative designs 
 
 ### 2. Compiling the Tint Compiler into WebAssembly (WASM)
 * **Alternative**: Compile Google's C++ Tint shader compiler inside our WASM core engine module to translate GLSL to WGSL directly inside the C++ runtime on the web.
-* **Why Ruled Out**: Compiling the full C++ Tint translator into WebAssembly introduces massive binary bloat (adding $>12\text{MB}$ to the WASM file) and severely slows down initial web page loading. We resolved this by using a split-compiler strategy: the web frontend uses lightweight WebAssembly-compiled NPM packages (`@webgpu/glslang` and `twgsl`) running client-side in JavaScript to translate GLSL before sending the clean WGSL code to the C++ core. This keeps our core engine WASM module under $1\text{MB}$.
+* **Why Ruled Out**: Compiling the full C++ Tint translator into WebAssembly introduces massive binary bloat (adding $>12\text{MB}$ to the WASM file) and severely slows down initial web page loading. We resolved this by using a split-compiler strategy: the web frontend uses lightweight WebAssembly-compiled modules (`@webgpu/glslang` from NPM and `twgsl` downloaded from BabylonJS CDN) running client-side in JavaScript to translate GLSL before sending the clean WGSL code to the C++ core. This keeps our core engine WASM module under $1\text{MB}$.
 
 ### 3. Exposing Raw WASM Memory Pointers (`uintptr_t`) for Asset Uploads
 * **Alternative**: Expose raw C++ memory pointers to JavaScript. JavaScript would write model vertices and texture pixel arrays directly into the WASM heap at these addresses.
@@ -660,7 +660,7 @@ This section enumerates every configuration, source, header, scripting, and layo
 ### 4. Web Application Frontend (`web/`)
 
 * **`web/package.json` & `web/tsconfig.json` [NEW]**
-  - *Rationale*: Setup Vite dev environments. Installs dependencies: React, TypeScript, CodeMirror code editor, `jszip` (packaging zip archives), `@webgpu/glslang` (GLSL compiling), and `twgsl` (SPIR-V translation).
+  - *Rationale*: Setup Vite dev environments. Installs dependencies: React, TypeScript, CodeMirror code editor, `jszip` (packaging zip archives), and `@webgpu/glslang` (GLSL compiling). Also automatically downloads `twgsl` (SPIR-V translation) from the BabylonJS CDN during installation.
 * **`web/vite.config.ts` [NEW]**
   - *Rationale*: Directs compiling output folders and registers secure HTTP headers (Cross-Origin-Opener-Policy, Cross-Origin-Embedder-Policy) required to unlock multi-threading WebAssembly SharedArrayBuffers.
 * **`web/index.html` [NEW]**

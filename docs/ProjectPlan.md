@@ -27,8 +27,8 @@ This document outlines the phased development plan, status tracking, and milesto
     *   **Diagnostic Interface**: Implement log overlay panels, error lint markers, compile play button with true asynchronous compilation feedback (JS-to-C++ callbacks), and `Alt+Enter` key listener to dynamically update the running shader.
     *   Support mouse coordinate capture and upload (`iMouse` uniform binding).
 *   **Phase 3.2: Browser-Side GLSL Compilation**
-    *   Integrate `@webgpu/glslang` and `twgsl` (from public registry) into the React frontend compiler manager.
-    *   Update `copy-wasm.js` to automatically copy `twgsl.js`/`twgsl.wasm` to the public folder.
+    *   Integrate `@webgpu/glslang` (from public registry) and `twgsl` (from CDN) into the React frontend compiler manager.
+    *   Update `copy-wasm.js` to automatically copy `glslang.wasm` and download `twgsl` to the public folder.
     *   Implement GLSL syntax highlighting in CodeMirror (via C++ extension).
     *   Compile GLSL entered by the user to SPIR-V via `glslang`, translate SPIR-V to WGSL via `twgsl`, and upload the translated WGSL code to the C++ core.
 

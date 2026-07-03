@@ -162,16 +162,28 @@ If the shader fails to compile, the detailed compilation errors are printed to `
 The WebAssembly target compiles the C++ codebase into WASM and HTML using the **Emscripten SDK**.
 
 ### Setup Emscripten
-1. Clone and install the Emscripten SDK (emsdk) if you haven't already:
+1. Clone and install the Emscripten SDK (emsdk). **We recommend cloning this outside of your project directory** (e.g., in a dedicated tools directory like `C:\src\emsdk` or your user home directory `C:\Users\<YourUsername>\emsdk`) so it can be reused across other WebAssembly projects:
    ```bash
+   # Navigate to your preferred tools directory (e.g., C:\src), then clone:
    git clone https://github.com/emscripten-core/emsdk.git
    cd emsdk
    ./emsdk install latest
    ./emsdk activate latest
    ```
-2. Activate the Emscripten environment in your terminal:
-   *   **Windows**: `emsdk_env.bat`
-   *   **macOS / Linux**: `source ./emsdk_env.sh`
+2. Activate the Emscripten environment in your terminal (this must be run in **every new terminal session** before building):
+   *   **Windows (PowerShell)**: 
+       ```powershell
+       . ./emsdk_env.ps1
+       ```
+       *(Note the dot and space at the beginning. You may need to run `Set-ExecutionPolicy RemoteSigned -Scope Process` first if script execution is disabled).*
+   *   **Windows (Command Prompt)**: 
+       ```cmd
+       emsdk_env.bat
+       ```
+   *   **macOS / Linux**: 
+       ```bash
+       source ./emsdk_env.sh
+       ```
 
 ### Compile to WebAssembly
 1. Configure the project using the Emscripten CMake wrapper (`emcmake`):
@@ -197,7 +209,7 @@ The WebAssembly target compiles the C++ codebase into WASM and HTML using the **
 The web target uses a modern **React + Vite** dashboard which wraps the WebGPU C++ engine, providing a live code editor, uniform controls, and real-time compilation logs.
 
 #### Step A: Install Node.js Dependencies
-Install the package dependencies from the project root (this will also copy `glslang.wasm` to the public folder automatically):
+Install the package dependencies from the project root (this will also copy `glslang.wasm` from `node_modules` and automatically download `twgsl.js`/`twgsl.wasm` from the BabylonJS CDN to the `public/` folder):
 ```bash
 npm --prefix web install
 ```
@@ -220,17 +232,23 @@ npm --prefix web run build
 ```
 The optimized production assets will be outputted to the **`dist-web/`** folder in the project root.
 
-To serve this folder, you can use any static web server. For example, using `http-server`:
+To preview the production build locally, run:
+```bash
+npm --prefix web run preview
+```
+This will start a local server (typically at **`http://localhost:4173`**) and will only expose the secure `localhost` address by default, preventing WebGPU errors.
+
+Alternatively, you can serve the `dist-web/` folder using any static web server of your choice:
 ```bash
 npx http-server dist-web -p 8080
 ```
 
 > [!IMPORTANT]
 > **WebGPU Secure Context Requirement**
-> WebGPU is only available in a **Secure Context**. When running the production build locally:
-> * **Access it via:** **`http://localhost:8080`** or **`http://127.0.0.1:8080`** (the browser trusts local loopback addresses).
-> * **Do NOT** access the app via your local network IP (e.g. `http://192.168.x.x:8080` or `http://100.x.x.x:8080`) over plain `http`. If you do, the browser will block WebGPU (`navigator.gpu` will be `undefined`).
-> * If you must access the app from another device on your network, you must serve it over HTTPS. For example, you can generate local SSL certificates and run:
+> WebGPU is only available in a **Secure Context**. When running the production build:
+> * **Access it via:** **`http://localhost`** or **`http://127.0.0.1`** (the browser trusts local loopback addresses).
+> * **Do NOT** access the app via your local network IP (e.g. `http://192.168.x.x` or `http://100.x.x.x`) over plain `http`. If you do, the browser will block WebGPU (`navigator.gpu` will be `undefined`).
+> * If you must access the app from another device on your network, you must serve it over HTTPS. For example, you can generate local SSL certificates and run `http-server` with SSL:
 >   ```bash
 >   npx http-server dist-web -p 8080 -S -C cert.pem -K key.pem
 >   ```
