@@ -144,15 +144,13 @@ bool TextureManager::CreateStaticTexture(const std::string& name, const void* pi
     return true;
 }
 
-bool TextureManager::CreateRenderTarget(const std::string& name, uint32_t width, uint32_t height, wgpu::TextureFormat format, bool pingPong) {
+bool TextureManager::CreateRenderTarget(const std::string& name, uint32_t width, uint32_t height, wgpu::TextureFormat format, bool pingPong, bool isDynamic) {
     wgpu::TextureUsage usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
 
     PingPongTexture ppTex;
     ppTex.isPingPong = pingPong;
     ppTex.writeIndex = 0;
 
-    // If width or height is 0, it's a dynamic render target that resizes with the viewport
-    bool isDynamic = (width == 0 || height == 0);
     if (isDynamic) {
         // Find if it's already in the dynamic list
         bool found = false;
@@ -165,9 +163,9 @@ bool TextureManager::CreateRenderTarget(const std::string& name, uint32_t width,
         if (!found) {
             mDynamicRenderTargets.push_back({name, format, pingPong});
         }
-        // Set temporary size (will be resized immediately by ResizeRenderTargets)
-        width = 1;
-        height = 1;
+        // Set temporary size if not specified (will be resized immediately by ResizeRenderTargets)
+        if (width == 0) width = 1;
+        if (height == 0) height = 1;
     }
 
     if (!AllocateTextureResource(ppTex.resources[0], width, height, format, usage)) {

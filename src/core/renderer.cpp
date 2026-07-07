@@ -201,13 +201,12 @@ bool Renderer::Init() {
     CreateDepthTexture();
 
     // Create default render targets for Buffer A, B, C, D (using RGBA16Float to match Shadertoy's high-precision buffers)
-    mTextureManager->CreateRenderTarget("BufferA", 0, 0, wgpu::TextureFormat::RGBA16Float, true);
-    mTextureManager->CreateRenderTarget("BufferB", 0, 0, wgpu::TextureFormat::RGBA16Float, true);
-    mTextureManager->CreateRenderTarget("BufferC", 0, 0, wgpu::TextureFormat::RGBA16Float, true);
-    mTextureManager->CreateRenderTarget("BufferD", 0, 0, wgpu::TextureFormat::RGBA16Float, true);
-
-    // Resize render targets to match initial viewport size
-    mTextureManager->ResizeRenderTargets(mContext->GetWidth(), mContext->GetHeight());
+    uint32_t initialWidth = mContext->GetWidth();
+    uint32_t initialHeight = mContext->GetHeight();
+    mTextureManager->CreateRenderTarget("BufferA", initialWidth, initialHeight, wgpu::TextureFormat::RGBA16Float, /*pingPong=*/true, /*isDynamic=*/true);
+    mTextureManager->CreateRenderTarget("BufferB", initialWidth, initialHeight, wgpu::TextureFormat::RGBA16Float, /*pingPong=*/true, /*isDynamic=*/true);
+    mTextureManager->CreateRenderTarget("BufferC", initialWidth, initialHeight, wgpu::TextureFormat::RGBA16Float, /*pingPong=*/true, /*isDynamic=*/true);
+    mTextureManager->CreateRenderTarget("BufferD", initialWidth, initialHeight, wgpu::TextureFormat::RGBA16Float, /*pingPong=*/true, /*isDynamic=*/true);
 
     // Initialize passes (BufferA, BufferB, BufferC, BufferD, Image)
     mPasses.push_back({"BufferA", false});

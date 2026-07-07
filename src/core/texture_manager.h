@@ -42,8 +42,8 @@ class TextureManager {
     // Create or update a static texture with CPU pixel data
     bool CreateStaticTexture(const std::string& name, const void* pixels, uint32_t width, uint32_t height, wgpu::TextureFormat format);
 
-    // Create or update a render target texture (optionally ping-pong)
-    bool CreateRenderTarget(const std::string& name, uint32_t width, uint32_t height, wgpu::TextureFormat format, bool pingPong);
+    // Create or update a render target texture (optionally ping-pong, optionally dynamic/resizable)
+    bool CreateRenderTarget(const std::string& name, uint32_t width, uint32_t height, wgpu::TextureFormat format, bool pingPong, bool isDynamic);
 
     // Resize all render targets that match the viewport size (width=0, height=0 means dynamic)
     void ResizeRenderTargets(uint32_t width, uint32_t height);
