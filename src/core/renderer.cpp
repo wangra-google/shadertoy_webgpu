@@ -83,56 +83,21 @@ Renderer::Renderer(GraphicsContext* context)
 Renderer::~Renderer() {
     mIsAlive->store(false);
     
-    // Release passes resources
-    for (auto& pass : mPasses) {
-        if (pass.bindGroup1) {
-            wgpuBindGroupRelease(pass.bindGroup1);
-        }
-        if (pass.vertexShaderModule) {
-            wgpuShaderModuleRelease(pass.vertexShaderModule);
-        }
-        if (pass.fragmentShaderModule) {
-            wgpuShaderModuleRelease(pass.fragmentShaderModule);
-        }
-        if (pass.pipeline) {
-            wgpuRenderPipelineRelease(pass.pipeline);
-        }
-    }
     mPasses.clear();
 
-    if (mDepthTextureView) {
-        wgpuTextureViewRelease(mDepthTextureView);
-    }
     if (mDepthTexture) {
-        wgpuTextureDestroy(mDepthTexture);
-        wgpuTextureRelease(mDepthTexture);
+        mDepthTexture.Destroy();
     }
-
-    if (mBindGroup) {
-        wgpuBindGroupRelease(mBindGroup);
-    }
-    if (mPipelineLayout) {
-        wgpuPipelineLayoutRelease(mPipelineLayout);
-    }
-    if (mBindGroupLayout) {
-        wgpuBindGroupLayoutRelease(mBindGroupLayout);
-    }
-    if (mBindGroupLayout1) {
-        wgpuBindGroupLayoutRelease(mBindGroupLayout1);
-    }
-
     if (mShadertoyUniformBuffer) {
-        wgpuBufferDestroy(mShadertoyUniformBuffer);
-        wgpuBufferRelease(mShadertoyUniformBuffer);
+        mShadertoyUniformBuffer.Destroy();
     }
     if (mCameraUniformBuffer) {
-        wgpuBufferDestroy(mCameraUniformBuffer);
-        wgpuBufferRelease(mCameraUniformBuffer);
+        mCameraUniformBuffer.Destroy();
     }
 }
 
 bool Renderer::Init() {
-    WGPUDevice device = mContext->GetDevice();
+    wgpu::Device device = mContext->GetDevice();
     if (!device) {
         std::cerr << "Failed to initialize Renderer: device is null!" << std::endl;
         return false;
@@ -142,66 +107,66 @@ bool Renderer::Init() {
     mTextureManager = std::make_unique<TextureManager>(device);
 
     // Create uniform buffers
-    WGPUBufferDescriptor uniformBufferDesc = {};
-    uniformBufferDesc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+    wgpu::BufferDescriptor uniformBufferDesc;
+    uniformBufferDesc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
     uniformBufferDesc.mappedAtCreation = false;
 
-    uniformBufferDesc.label = {"Shadertoy Uniform Buffer", WGPU_STRLEN};
+    uniformBufferDesc.label = "Shadertoy Uniform Buffer";
     uniformBufferDesc.size = sizeof(ShadertoyUniforms);
-    mShadertoyUniformBuffer = wgpuDeviceCreateBuffer(device, &uniformBufferDesc);
+    mShadertoyUniformBuffer = device.CreateBuffer(&uniformBufferDesc);
 
-    uniformBufferDesc.label = {"Camera Uniform Buffer", WGPU_STRLEN};
+    uniformBufferDesc.label = "Camera Uniform Buffer";
     uniformBufferDesc.size = sizeof(CameraUniforms);
-    mCameraUniformBuffer = wgpuDeviceCreateBuffer(device, &uniformBufferDesc);
+    mCameraUniformBuffer = device.CreateBuffer(&uniformBufferDesc);
 
     // Create Bind Group Layout 0 (Uniforms)
-    WGPUBindGroupLayoutEntry bindGroupLayoutEntries[2] = {};
+    wgpu::BindGroupLayoutEntry bindGroupLayoutEntries[2] = {};
 
     // Shadertoy Uniforms Entry
     bindGroupLayoutEntries[0].binding = 0;
-    bindGroupLayoutEntries[0].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
-    bindGroupLayoutEntries[0].buffer.type = WGPUBufferBindingType_Uniform;
+    bindGroupLayoutEntries[0].visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
+    bindGroupLayoutEntries[0].buffer.type = wgpu::BufferBindingType::Uniform;
     bindGroupLayoutEntries[0].buffer.hasDynamicOffset = false;
     bindGroupLayoutEntries[0].buffer.minBindingSize = sizeof(ShadertoyUniforms);
 
     // Camera Uniforms Entry
     bindGroupLayoutEntries[1].binding = 1;
-    bindGroupLayoutEntries[1].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
-    bindGroupLayoutEntries[1].buffer.type = WGPUBufferBindingType_Uniform;
+    bindGroupLayoutEntries[1].visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
+    bindGroupLayoutEntries[1].buffer.type = wgpu::BufferBindingType::Uniform;
     bindGroupLayoutEntries[1].buffer.hasDynamicOffset = false;
     bindGroupLayoutEntries[1].buffer.minBindingSize = sizeof(CameraUniforms);
 
-    WGPUBindGroupLayoutDescriptor bindGroupLayoutDesc = {};
-    bindGroupLayoutDesc.label = {"Renderer Bind Group Layout 0 (Uniforms)", WGPU_STRLEN};
+    wgpu::BindGroupLayoutDescriptor bindGroupLayoutDesc;
+    bindGroupLayoutDesc.label = "Renderer Bind Group Layout 0 (Uniforms)";
     bindGroupLayoutDesc.entryCount = 2;
     bindGroupLayoutDesc.entries = bindGroupLayoutEntries;
-    mBindGroupLayout = wgpuDeviceCreateBindGroupLayout(device, &bindGroupLayoutDesc);
+    mBindGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
 
     // Create Bind Group Layout 1 (Textures & Sampler)
-    WGPUBindGroupLayoutEntry textureLayoutEntries[5] = {};
+    wgpu::BindGroupLayoutEntry textureLayoutEntries[5] = {};
     
     // Sampler (Binding 0)
     textureLayoutEntries[0].binding = 0;
-    textureLayoutEntries[0].visibility = WGPUShaderStage_Fragment;
-    textureLayoutEntries[0].sampler.type = WGPUSamplerBindingType_Filtering;
+    textureLayoutEntries[0].visibility = wgpu::ShaderStage::Fragment;
+    textureLayoutEntries[0].sampler.type = wgpu::SamplerBindingType::Filtering;
 
     // iChannel0..3 (Bindings 1..4)
     for (int i = 0; i < 4; ++i) {
         textureLayoutEntries[i + 1].binding = i + 1;
-        textureLayoutEntries[i + 1].visibility = WGPUShaderStage_Fragment;
-        textureLayoutEntries[i + 1].texture.sampleType = WGPUTextureSampleType_Float;
-        textureLayoutEntries[i + 1].texture.viewDimension = WGPUTextureViewDimension_2D;
+        textureLayoutEntries[i + 1].visibility = wgpu::ShaderStage::Fragment;
+        textureLayoutEntries[i + 1].texture.sampleType = wgpu::TextureSampleType::Float;
+        textureLayoutEntries[i + 1].texture.viewDimension = wgpu::TextureViewDimension::e2D;
         textureLayoutEntries[i + 1].texture.multisampled = false;
     }
 
-    WGPUBindGroupLayoutDescriptor textureLayoutDesc = {};
-    textureLayoutDesc.label = {"Renderer Bind Group Layout 1 (Textures)", WGPU_STRLEN};
+    wgpu::BindGroupLayoutDescriptor textureLayoutDesc;
+    textureLayoutDesc.label = "Renderer Bind Group Layout 1 (Textures)";
     textureLayoutDesc.entryCount = 5;
     textureLayoutDesc.entries = textureLayoutEntries;
-    mBindGroupLayout1 = wgpuDeviceCreateBindGroupLayout(device, &textureLayoutDesc);
+    mBindGroupLayout1 = device.CreateBindGroupLayout(&textureLayoutDesc);
 
     // Create Bind Group 0 (Uniforms)
-    WGPUBindGroupEntry bindGroupEntries[2] = {};
+    wgpu::BindGroupEntry bindGroupEntries[2] = {};
     bindGroupEntries[0].binding = 0;
     bindGroupEntries[0].buffer = mShadertoyUniformBuffer;
     bindGroupEntries[0].offset = 0;
@@ -212,20 +177,20 @@ bool Renderer::Init() {
     bindGroupEntries[1].offset = 0;
     bindGroupEntries[1].size = sizeof(CameraUniforms);
 
-    WGPUBindGroupDescriptor bindGroupDesc = {};
-    bindGroupDesc.label = {"Renderer Bind Group 0 (Uniforms)", WGPU_STRLEN};
+    wgpu::BindGroupDescriptor bindGroupDesc;
+    bindGroupDesc.label = "Renderer Bind Group 0 (Uniforms)";
     bindGroupDesc.layout = mBindGroupLayout;
     bindGroupDesc.entryCount = 2;
     bindGroupDesc.entries = bindGroupEntries;
-    mBindGroup = wgpuDeviceCreateBindGroup(device, &bindGroupDesc);
+    mBindGroup = device.CreateBindGroup(&bindGroupDesc);
 
     // Create Pipeline Layout
-    WGPUBindGroupLayout layouts[2] = {mBindGroupLayout, mBindGroupLayout1};
-    WGPUPipelineLayoutDescriptor pipelineLayoutDesc = {};
-    pipelineLayoutDesc.label = {"Renderer Pipeline Layout", WGPU_STRLEN};
+    wgpu::BindGroupLayout layouts[2] = {mBindGroupLayout, mBindGroupLayout1};
+    wgpu::PipelineLayoutDescriptor pipelineLayoutDesc;
+    pipelineLayoutDesc.label = "Renderer Pipeline Layout";
     pipelineLayoutDesc.bindGroupLayoutCount = 2;
     pipelineLayoutDesc.bindGroupLayouts = layouts;
-    mPipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDesc);
+    mPipelineLayout = device.CreatePipelineLayout(&pipelineLayoutDesc);
 
     // Create Geometries
     mQuadMesh = Mesh::CreateQuad(device);
@@ -236,10 +201,10 @@ bool Renderer::Init() {
     CreateDepthTexture();
 
     // Create default render targets for Buffer A, B, C, D (using RGBA16Float to match Shadertoy's high-precision buffers)
-    mTextureManager->CreateRenderTarget("BufferA", 0, 0, WGPUTextureFormat_RGBA16Float, true);
-    mTextureManager->CreateRenderTarget("BufferB", 0, 0, WGPUTextureFormat_RGBA16Float, true);
-    mTextureManager->CreateRenderTarget("BufferC", 0, 0, WGPUTextureFormat_RGBA16Float, true);
-    mTextureManager->CreateRenderTarget("BufferD", 0, 0, WGPUTextureFormat_RGBA16Float, true);
+    mTextureManager->CreateRenderTarget("BufferA", 0, 0, wgpu::TextureFormat::RGBA16Float, true);
+    mTextureManager->CreateRenderTarget("BufferB", 0, 0, wgpu::TextureFormat::RGBA16Float, true);
+    mTextureManager->CreateRenderTarget("BufferC", 0, 0, wgpu::TextureFormat::RGBA16Float, true);
+    mTextureManager->CreateRenderTarget("BufferD", 0, 0, wgpu::TextureFormat::RGBA16Float, true);
 
     // Resize render targets to match initial viewport size
     mTextureManager->ResizeRenderTargets(mContext->GetWidth(), mContext->GetHeight());
@@ -252,14 +217,13 @@ bool Renderer::Init() {
     mPasses.push_back({"Image", true}); // Image is enabled by default
 
     // Compile default shader module for the Image pass
-    WGPUShaderModuleDescriptor shaderModuleDesc = {};
-    WGPUShaderSourceWGSL wgslDesc = {};
-    wgslDesc.chain.next = nullptr;
-    wgslDesc.chain.sType = WGPUSType_ShaderSourceWGSL;
-    wgslDesc.code = {DEFAULT_WGSL_SHADER, WGPU_STRLEN};
-    shaderModuleDesc.nextInChain = &wgslDesc.chain;
+    wgpu::ShaderSourceWGSL wgslDesc;
+    wgslDesc.code = DEFAULT_WGSL_SHADER;
 
-    WGPUShaderModule defaultShaderModule = wgpuDeviceCreateShaderModule(device, &shaderModuleDesc);
+    wgpu::ShaderModuleDescriptor shaderModuleDesc;
+    shaderModuleDesc.nextInChain = &wgslDesc;
+
+    wgpu::ShaderModule defaultShaderModule = device.CreateShaderModule(&shaderModuleDesc);
     if (!defaultShaderModule) {
         std::cerr << "Failed to create default shader module!" << std::endl;
         return false;
@@ -267,16 +231,13 @@ bool Renderer::Init() {
 
     for (auto& pass : mPasses) {
         pass.vertexShaderModule = defaultShaderModule;
-        wgpuShaderModuleAddRef(defaultShaderModule);
     }
 
     RenderPass* imagePass = FindPass("Image");
     imagePass->fragmentShaderModule = defaultShaderModule;
-    wgpuShaderModuleAddRef(defaultShaderModule);
 
     bool success = CreatePipeline(*imagePass, defaultShaderModule, ShaderStage::Fragment, 0, /*isAsync=*/false, "vs_main", "fs_main");
 
-    wgpuShaderModuleRelease(defaultShaderModule);
     return success;
 }
 
@@ -331,7 +292,7 @@ bool Renderer::UpdateShader(const std::string& passName,
         return false;
     }
 
-    WGPUDevice device = mContext->GetDevice();
+    wgpu::Device device = mContext->GetDevice();
     if (!device) {
         if (callback) {
             callback(false, "WebGPU device is not initialized.");
@@ -366,16 +327,15 @@ bool Renderer::UpdateShader(const std::string& passName,
         wgslSource = shaderSource;
     }
 
-    WGPUShaderModuleDescriptor shaderModuleDesc = {};
-    WGPUShaderSourceWGSL wgslDesc = {};
-    wgslDesc.chain.next = nullptr;
-    wgslDesc.chain.sType = WGPUSType_ShaderSourceWGSL;
-    wgslDesc.code = {wgslSource.c_str(), WGPU_STRLEN};
-    shaderModuleDesc.nextInChain = &wgslDesc.chain;
+    wgpu::ShaderSourceWGSL wgslDesc;
+    wgslDesc.code = wgslSource.c_str();
+
+    wgpu::ShaderModuleDescriptor shaderModuleDesc;
+    shaderModuleDesc.nextInChain = &wgslDesc;
 
     std::cout << "=== WGSL SOURCE FOR " << passName << " ===\n" << wgslSource << "\n=====================\n" << std::endl;
 
-    WGPUShaderModule newShaderModule = wgpuDeviceCreateShaderModule(device, &shaderModuleDesc);
+    wgpu::ShaderModule newShaderModule = device.CreateShaderModule(&shaderModuleDesc);
     std::string vertexEP = (stage == ShaderStage::Vertex) ? entryPoint : pass->vertexEntryPoint;
     std::string fragmentEP = (stage == ShaderStage::Fragment) ? entryPoint : pass->fragmentEntryPoint;
 
@@ -386,7 +346,6 @@ bool Renderer::UpdateShader(const std::string& passName,
 
     bool result = CreatePipeline(*pass, newShaderModule, stage, compilationId, /*isAsync=*/true,
                                  vertexEP, fragmentEP, callback);
-    wgpuShaderModuleRelease(newShaderModule);
     return result;
 }
 
@@ -411,124 +370,102 @@ void Renderer::SetPassEnabled(const std::string& passName, bool enabled) {
 void Renderer::LoadTextureData(const std::string& name, const void* pixels, uint32_t width, uint32_t height, const std::string& format) {
     if (!mTextureManager) return;
     
-    WGPUTextureFormat wgpuFormat = WGPUTextureFormat_RGBA8Unorm;
+    wgpu::TextureFormat wgpuFormat = wgpu::TextureFormat::RGBA8Unorm;
     if (format == "srgb") {
-        wgpuFormat = WGPUTextureFormat_RGBA8UnormSrgb;
+        wgpuFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
     } else if (format == "hdr") {
-        wgpuFormat = WGPUTextureFormat_RGBA16Float;
+        wgpuFormat = wgpu::TextureFormat::RGBA16Float;
     }
 
     mTextureManager->CreateStaticTexture(name, pixels, width, height, wgpuFormat);
 }
 
-void Renderer::SwapPipeline(const std::string& passName, WGPURenderPipeline newPipeline, WGPUShaderModule newModule, ShaderStage stage, const std::string& entryPoint) {
+void Renderer::SwapPipeline(const std::string& passName, wgpu::RenderPipeline newPipeline, wgpu::ShaderModule newModule, ShaderStage stage, const std::string& entryPoint) {
     RenderPass* pass = FindPass(passName);
     if (!pass) return;
 
-    if (pass->pipeline) {
-        wgpuRenderPipelineRelease(pass->pipeline);
-    }
     pass->pipeline = newPipeline;
 
     if (stage == ShaderStage::Fragment) {
-        if (pass->fragmentShaderModule) {
-            wgpuShaderModuleRelease(pass->fragmentShaderModule);
-        }
         pass->fragmentShaderModule = newModule;
-        wgpuShaderModuleAddRef(newModule);
         pass->fragmentEntryPoint = entryPoint;
     } else if (stage == ShaderStage::Vertex) {
-        if (pass->vertexShaderModule) {
-            wgpuShaderModuleRelease(pass->vertexShaderModule);
-        }
         pass->vertexShaderModule = newModule;
-        wgpuShaderModuleAddRef(newModule);
         pass->vertexEntryPoint = entryPoint;
     }
 }
 
-struct PipelineAsyncData {
-    Renderer* renderer;
-    std::string passName;
-    WGPUShaderModule shaderModule;
-    ShaderStage stage;
-    uint64_t compilationId;
-    std::string vertexEntryPoint;
-    std::string fragmentEntryPoint;
-    std::shared_ptr<std::atomic<bool>> isAlive;
-    std::function<void(bool, const std::string&)> callback;
-};
 
-bool Renderer::CreatePipeline(RenderPass& pass, WGPUShaderModule newModule, ShaderStage stage, uint64_t compilationId, bool isAsync,
+bool Renderer::CreatePipeline(RenderPass& pass, wgpu::ShaderModule newModule, ShaderStage stage, uint64_t compilationId, bool isAsync,
                               const std::string& vertexEntryPoint, const std::string& fragmentEntryPoint,
                               std::function<void(bool, const std::string&)> callback) {
-    WGPUDevice device = mContext->GetDevice();
+    wgpu::Device device = mContext->GetDevice();
 
     // Configure vertex attribute layouts matching Vertex struct
-    WGPUVertexAttribute vertexAttributes[4] = {};
+    wgpu::VertexAttribute vertexAttributes[4] = {};
 
     // position (location 0)
     vertexAttributes[0].shaderLocation = 0;
-    vertexAttributes[0].format = WGPUVertexFormat_Float32x3;
+    vertexAttributes[0].format = wgpu::VertexFormat::Float32x3;
     vertexAttributes[0].offset = offsetof(Vertex, position);
 
     // normal (location 1)
     vertexAttributes[1].shaderLocation = 1;
-    vertexAttributes[1].format = WGPUVertexFormat_Float32x3;
+    vertexAttributes[1].format = wgpu::VertexFormat::Float32x3;
     vertexAttributes[1].offset = offsetof(Vertex, normal);
 
     // uv (location 2)
     vertexAttributes[2].shaderLocation = 2;
-    vertexAttributes[2].format = WGPUVertexFormat_Float32x2;
+    vertexAttributes[2].format = wgpu::VertexFormat::Float32x2;
     vertexAttributes[2].offset = offsetof(Vertex, uv);
 
     // tangent (location 3)
     vertexAttributes[3].shaderLocation = 3;
-    vertexAttributes[3].format = WGPUVertexFormat_Float32x4;
+    vertexAttributes[3].format = wgpu::VertexFormat::Float32x4;
     vertexAttributes[3].offset = offsetof(Vertex, tangent);
 
-    WGPUVertexBufferLayout vertexBufferLayout = {};
+    wgpu::VertexBufferLayout vertexBufferLayout;
     vertexBufferLayout.arrayStride = sizeof(Vertex);
-    vertexBufferLayout.stepMode = WGPUVertexStepMode_Vertex;
+    vertexBufferLayout.stepMode = wgpu::VertexStepMode::Vertex;
     vertexBufferLayout.attributeCount = 4;
     vertexBufferLayout.attributes = vertexAttributes;
 
     // Build color target state
-    WGPUColorTargetState colorTarget = {};
+    wgpu::ColorTargetState colorTarget;
     if (pass.name == "Image") {
         colorTarget.format = mContext->GetSwapChainFormat();
     } else {
         // Query the actual format from the texture manager to support HDR/sRGB targets
-        WGPUTextureFormat format = mTextureManager->GetFormat(pass.name);
-        if (format == WGPUTextureFormat_Undefined) {
-            format = WGPUTextureFormat_RGBA8Unorm;
+        wgpu::TextureFormat format = mTextureManager->GetFormat(pass.name);
+        if (format == wgpu::TextureFormat::Undefined) {
+            format = wgpu::TextureFormat::RGBA8Unorm;
         }
         colorTarget.format = format;
     }
-    colorTarget.writeMask = WGPUColorWriteMask_All;
+    colorTarget.writeMask = wgpu::ColorWriteMask::All;
     colorTarget.blend = nullptr;  // standard blending disabled
 
-    WGPUFragmentState fragmentState = {};
-    fragmentState.entryPoint = {fragmentEntryPoint.c_str(), WGPU_STRLEN};
+    wgpu::FragmentState fragmentState;
+    fragmentState.entryPoint = fragmentEntryPoint.c_str();
     fragmentState.targetCount = 1;
     fragmentState.targets = &colorTarget;
 
     // Depth Stencil state
-    WGPUDepthStencilState depthStencilState = {};
-    depthStencilState.format = WGPUTextureFormat_Depth24PlusStencil8;
-    depthStencilState.depthWriteEnabled = WGPUOptionalBool_True;
-    depthStencilState.depthCompare = WGPUCompareFunction_Less;
-    depthStencilState.stencilFront.compare = WGPUCompareFunction_Always;
-    depthStencilState.stencilFront.failOp = WGPUStencilOperation_Keep;
-    depthStencilState.stencilFront.depthFailOp = WGPUStencilOperation_Keep;
-    depthStencilState.stencilFront.passOp = WGPUStencilOperation_Keep;
+    wgpu::DepthStencilState depthStencilState;
+    depthStencilState.format = wgpu::TextureFormat::Depth24PlusStencil8;
+    depthStencilState.depthWriteEnabled = wgpu::OptionalBool::True;
+    depthStencilState.depthCompare = wgpu::CompareFunction::Less;
+    depthStencilState.stencilFront.compare = wgpu::CompareFunction::Always;
+    depthStencilState.stencilFront.failOp = wgpu::StencilOperation::Keep;
+    depthStencilState.stencilFront.depthFailOp = wgpu::StencilOperation::Keep;
+    depthStencilState.stencilFront.passOp = wgpu::StencilOperation::Keep;
     depthStencilState.stencilBack = depthStencilState.stencilFront;
 
-    WGPURenderPipelineDescriptor pipelineDesc = {};
-    pipelineDesc.label = { (pass.name + " Render Pipeline").c_str(), WGPU_STRLEN };
+    wgpu::RenderPipelineDescriptor pipelineDesc;
+    pipelineDesc.label = (pass.name + " Render Pipeline").c_str();
     pipelineDesc.layout = mPipelineLayout;
 
-    pipelineDesc.vertex.entryPoint = {vertexEntryPoint.c_str(), WGPU_STRLEN};
+    pipelineDesc.vertex.entryPoint = vertexEntryPoint.c_str();
     pipelineDesc.vertex.bufferCount = 1;
     pipelineDesc.vertex.buffers = &vertexBufferLayout;
 
@@ -541,10 +478,10 @@ bool Renderer::CreatePipeline(RenderPass& pass, WGPUShaderModule newModule, Shad
         fragmentState.module = pass.fragmentShaderModule;
     }
 
-    pipelineDesc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-    pipelineDesc.primitive.stripIndexFormat = WGPUIndexFormat_Undefined;
-    pipelineDesc.primitive.frontFace = WGPUFrontFace_CCW;
-    pipelineDesc.primitive.cullMode = WGPUCullMode_None;  // No face culling
+    pipelineDesc.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
+    pipelineDesc.primitive.stripIndexFormat = wgpu::IndexFormat::Undefined;
+    pipelineDesc.primitive.frontFace = wgpu::FrontFace::CCW;
+    pipelineDesc.primitive.cullMode = wgpu::CullMode::None;  // No face culling
 
     pipelineDesc.multisample.count = 1;
     pipelineDesc.multisample.mask = ~0u;
@@ -554,94 +491,61 @@ bool Renderer::CreatePipeline(RenderPass& pass, WGPUShaderModule newModule, Shad
     pipelineDesc.depthStencil = &depthStencilState;
 
     if (isAsync) {
-        wgpuShaderModuleAddRef(newModule);
-
-        auto* asyncData = new PipelineAsyncData{
-            this, pass.name, newModule, stage, compilationId, vertexEntryPoint, fragmentEntryPoint, mIsAlive, callback};
-
-        WGPUCreateRenderPipelineAsyncCallbackInfo callbackInfo = {};
+        wgpu::CallbackMode callbackMode;
 #ifdef __EMSCRIPTEN__
         // On Web, JS is single-threaded so AllowSpontaneous is safe and doesn't require manual event ticking.
-        callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+        callbackMode = wgpu::CallbackMode::AllowSpontaneous;
 #else
         // On Native, use AllowProcessEvents to run callbacks on the main thread and avoid background thread races.
-        callbackInfo.mode = WGPUCallbackMode_AllowProcessEvents;
+        callbackMode = wgpu::CallbackMode::AllowProcessEvents;
 #endif
-        callbackInfo.callback = [](WGPUCreatePipelineAsyncStatus status,
-                                   WGPURenderPipeline pipeline, WGPUStringView message,
-                                   void* userdata1, void* userdata2) {
-            auto* data = static_cast<PipelineAsyncData*>(userdata1);
-            
-            if (!data->isAlive->load()) {
-                wgpuShaderModuleRelease(data->shaderModule);
-                if (status == WGPUCreatePipelineAsyncStatus_Success) {
-                    wgpuRenderPipelineRelease(pipeline);
+
+        device.CreateRenderPipelineAsync(
+            &pipelineDesc,
+            callbackMode,
+            [this, passName = pass.name, newModule, stage, compilationId, vertexEntryPoint, fragmentEntryPoint, isAlive = mIsAlive, callback](
+                wgpu::CreatePipelineAsyncStatus status, wgpu::RenderPipeline pipeline, wgpu::StringView message) {
+                if (!isAlive->load()) {
+                    return;
                 }
-                delete data;
-                return;
-            }
 
-            Renderer* self = data->renderer;
-            WGPUShaderModule newModule = data->shaderModule;
-            ShaderStage stage = data->stage;
-
-            auto* passPtr = self->FindPass(data->passName);
-            if (!passPtr) {
-                wgpuShaderModuleRelease(newModule);
-                if (status == WGPUCreatePipelineAsyncStatus_Success) {
-                    wgpuRenderPipelineRelease(pipeline);
+                auto* passPtr = FindPass(passName);
+                if (!passPtr) {
+                    return;
                 }
-                delete data;
-                return;
-            }
 
-            if (data->compilationId < passPtr->latestRequestedCompilationId) {
-                std::cout << "Renderer: Discarding obsolete compilation for pass " << data->passName
-                          << " (ID: " << data->compilationId << ", Latest: " 
-                          << passPtr->latestRequestedCompilationId << ")" << std::endl;
-                if (status == WGPUCreatePipelineAsyncStatus_Success) {
-                    wgpuRenderPipelineRelease(pipeline);
+                if (compilationId < passPtr->latestRequestedCompilationId) {
+                    std::cout << "Renderer: Discarding obsolete compilation for pass " << passName
+                              << " (ID: " << compilationId << ", Latest: " 
+                              << passPtr->latestRequestedCompilationId << ")" << std::endl;
+                    if (callback) {
+                        callback(false, "Obsolete compilation discarded.");
+                    }
+                    return;
                 }
-                wgpuShaderModuleRelease(newModule);
-                if (data->callback) {
-                    data->callback(false, "Obsolete compilation discarded.");
-                }
-                delete data;
-                return;
-            }
 
-            bool success = false;
-            std::string errorMsg = "";
+                bool success = false;
+                std::string errorMsg = "";
 
-            if (status == WGPUCreatePipelineAsyncStatus_Success) {
-                self->SwapPipeline(data->passName, pipeline, newModule, stage, 
-                                   (stage == ShaderStage::Fragment) ? data->fragmentEntryPoint : data->vertexEntryPoint);
-                success = true;
-            } else {
-                std::cerr << "Asynchronous pipeline compilation failed for pass " << data->passName << ": ";
-                if (message.data && message.length > 0) {
-                    std::cerr.write(message.data, message.length);
-                    errorMsg = std::string(message.data, message.length);
+                if (status == wgpu::CreatePipelineAsyncStatus::Success) {
+                    SwapPipeline(passName, pipeline, newModule, stage, 
+                                 (stage == ShaderStage::Fragment) ? fragmentEntryPoint : vertexEntryPoint);
+                    success = true;
                 } else {
-                    std::cerr << "Unknown error";
-                    errorMsg = "Unknown error";
+                    std::cerr << "Asynchronous pipeline compilation failed for pass " << passName << ": "
+                              << (message.data ? std::string_view(message.data, message.length) : "Unknown error")
+                              << std::endl;
+                    errorMsg = message.data ? std::string(message.data, message.length) : "Unknown error";
                 }
-                std::cerr << std::endl;
+
+                if (callback) {
+                    callback(success, errorMsg);
+                }
             }
-
-            if (data->callback) {
-                data->callback(success, errorMsg);
-            }
-
-            wgpuShaderModuleRelease(newModule); // Release the reference held by asyncData (fixes ref leak)
-            delete data;
-        };
-        callbackInfo.userdata1 = asyncData;
-
-        wgpuDeviceCreateRenderPipelineAsync(device, &pipelineDesc, callbackInfo);
+        );
         return true;
     } else {
-        WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &pipelineDesc);
+        wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&pipelineDesc);
         if (!pipeline) {
             std::cerr << "Failed to create render pipeline synchronously for pass " << pass.name << "!" << std::endl;
             if (callback) {
@@ -658,13 +562,13 @@ bool Renderer::CreatePipeline(RenderPass& pass, WGPUShaderModule newModule, Shad
 }
 
 void Renderer::UpdateUniformBuffers() {
-    WGPUQueue queue = wgpuDeviceGetQueue(mContext->GetDevice());
+    wgpu::Queue queue = mContext->GetDevice().GetQueue();
 
     // 1. Update Shadertoy Uniforms
     mShadertoyUniformsVal.iResolution[0] = static_cast<float>(mContext->GetWidth());
     mShadertoyUniformsVal.iResolution[1] = static_cast<float>(mContext->GetHeight());
     mShadertoyUniformsVal.iResolution[2] = 1.0f;
-    wgpuQueueWriteBuffer(queue, mShadertoyUniformBuffer, 0, &mShadertoyUniformsVal,
+    queue.WriteBuffer(mShadertoyUniformBuffer, 0, &mShadertoyUniformsVal,
                          sizeof(ShadertoyUniforms));
 
     // 2. Update Camera Uniforms
@@ -707,17 +611,16 @@ void Renderer::UpdateUniformBuffers() {
         mCameraUniformsVal.uCameraPosition[2] = cameraPos.z;
     }
 
-    wgpuQueueWriteBuffer(queue, mCameraUniformBuffer, 0, &mCameraUniformsVal,
+    queue.WriteBuffer(mCameraUniformBuffer, 0, &mCameraUniformsVal,
                          sizeof(CameraUniforms));
-    wgpuQueueRelease(queue);
 }
 
-WGPUBindGroup Renderer::GetOrCreateBindGroup1(RenderPass& pass) {
-    WGPUTextureView currentViews[4] = {};
+wgpu::BindGroup Renderer::GetOrCreateBindGroup1(RenderPass& pass) {
+    wgpu::TextureView currentViews[4] = {};
     bool cacheValid = (pass.bindGroup1 != nullptr);
 
     for (int i = 0; i < 4; ++i) {
-        WGPUTextureView view = nullptr;
+        wgpu::TextureView view = nullptr;
         if (!pass.inputs[i].empty()) {
             view = mTextureManager->GetReadView(pass.inputs[i]);
         }
@@ -725,7 +628,7 @@ WGPUBindGroup Renderer::GetOrCreateBindGroup1(RenderPass& pass) {
             view = mTextureManager->GetDefaultView();
         }
         currentViews[i] = view;
-        if (view != pass.boundViews[i]) {
+        if (view.Get() != pass.boundViews[i].Get()) {
             cacheValid = false;
         }
     }
@@ -734,14 +637,10 @@ WGPUBindGroup Renderer::GetOrCreateBindGroup1(RenderPass& pass) {
         return pass.bindGroup1;
     }
 
-    // Recreate bind group
-    if (pass.bindGroup1) {
-        wgpuBindGroupRelease(pass.bindGroup1);
-        pass.bindGroup1 = nullptr;
-    }
+    pass.bindGroup1 = nullptr;
 
-    WGPUDevice device = mContext->GetDevice();
-    WGPUBindGroupEntry entries[5] = {};
+    wgpu::Device device = mContext->GetDevice();
+    wgpu::BindGroupEntry entries[5] = {};
     
     // Sampler
     entries[0].binding = 0;
@@ -754,31 +653,30 @@ WGPUBindGroup Renderer::GetOrCreateBindGroup1(RenderPass& pass) {
         pass.boundViews[i] = currentViews[i];
     }
 
-    WGPUBindGroupDescriptor desc = {};
-    desc.label = { (pass.name + " Bind Group 1 (Textures)").c_str(), WGPU_STRLEN };
+    wgpu::BindGroupDescriptor desc;
+    desc.label = (pass.name + " Bind Group 1 (Textures)").c_str();
     desc.layout = mBindGroupLayout1;
     desc.entryCount = 5;
     desc.entries = entries;
 
-    pass.bindGroup1 = wgpuDeviceCreateBindGroup(device, &desc);
+    pass.bindGroup1 = device.CreateBindGroup(&desc);
     return pass.bindGroup1;
 }
 
 void Renderer::Render() {
-    WGPUDevice device = mContext->GetDevice();
-    WGPUQueue queue = wgpuDeviceGetQueue(device);
+    wgpu::Device device = mContext->GetDevice();
+    wgpu::Queue queue = device.GetQueue();
 
     UpdateUniformBuffers();
 
-    WGPUTextureView backBufferView = mContext->GetCurrentSwapChainView();
+    wgpu::TextureView backBufferView = mContext->GetCurrentSwapChainView();
     if (!backBufferView) {
-        wgpuQueueRelease(queue);
         return;
     }
 
-    WGPUCommandEncoderDescriptor encoderDesc = {};
-    encoderDesc.label = {"Renderer Command Encoder", WGPU_STRLEN};
-    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &encoderDesc);
+    wgpu::CommandEncoderDescriptor encoderDesc;
+    encoderDesc.label = "Renderer Command Encoder";
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder(&encoderDesc);
 
     // Execute each pass in sequence
     for (auto& pass : mPasses) {
@@ -786,7 +684,7 @@ void Renderer::Render() {
             continue;
         }
 
-        WGPURenderPassColorAttachment colorAttachment = {};
+        wgpu::RenderPassColorAttachment colorAttachment = {};
         if (pass.name == "Image") {
             colorAttachment.view = backBufferView;
         } else {
@@ -799,33 +697,33 @@ void Renderer::Render() {
 
         colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
         colorAttachment.resolveTarget = nullptr;
-        colorAttachment.loadOp = WGPULoadOp_Clear;
-        colorAttachment.storeOp = WGPUStoreOp_Store;
+        colorAttachment.loadOp = wgpu::LoadOp::Clear;
+        colorAttachment.storeOp = wgpu::StoreOp::Store;
         colorAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
 
-        WGPURenderPassDepthStencilAttachment depthAttachment = {};
+        wgpu::RenderPassDepthStencilAttachment depthAttachment = {};
         depthAttachment.view = mDepthTextureView;
-        depthAttachment.depthLoadOp = WGPULoadOp_Clear;
-        depthAttachment.depthStoreOp = WGPUStoreOp_Store;
+        depthAttachment.depthLoadOp = wgpu::LoadOp::Clear;
+        depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
         depthAttachment.depthClearValue = 1.0f;
-        depthAttachment.stencilLoadOp = WGPULoadOp_Clear;
-        depthAttachment.stencilStoreOp = WGPUStoreOp_Store;
+        depthAttachment.stencilLoadOp = wgpu::LoadOp::Clear;
+        depthAttachment.stencilStoreOp = wgpu::StoreOp::Store;
         depthAttachment.stencilClearValue = 0;
 
-        WGPURenderPassDescriptor renderPassDesc = {};
-        renderPassDesc.label = { (pass.name + " Render Pass").c_str(), WGPU_STRLEN };
+        wgpu::RenderPassDescriptor renderPassDesc = {};
+        renderPassDesc.label = (pass.name + " Render Pass").c_str();
         renderPassDesc.colorAttachmentCount = 1;
         renderPassDesc.colorAttachments = &colorAttachment;
         renderPassDesc.depthStencilAttachment = &depthAttachment;
 
-        WGPURenderPassEncoder renderPassEncoder = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
+        wgpu::RenderPassEncoder renderPassEncoder = encoder.BeginRenderPass(&renderPassDesc);
 
         // Get or create the cached bind group 1 for textures
-        WGPUBindGroup bindGroup1 = GetOrCreateBindGroup1(pass);
+        wgpu::BindGroup bindGroup1 = GetOrCreateBindGroup1(pass);
 
-        wgpuRenderPassEncoderSetPipeline(renderPassEncoder, pass.pipeline);
-        wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 0, mBindGroup, 0, nullptr);
-        wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 1, bindGroup1, 0, nullptr);
+        renderPassEncoder.SetPipeline(pass.pipeline);
+        renderPassEncoder.SetBindGroup(0, mBindGroup, 0, nullptr);
+        renderPassEncoder.SetBindGroup(1, bindGroup1, 0, nullptr);
 
         switch (mGeometryType) {
             case GeometryType::Quad:
@@ -839,8 +737,7 @@ void Renderer::Render() {
                 break;
         }
 
-        wgpuRenderPassEncoderEnd(renderPassEncoder);
-        wgpuRenderPassEncoderRelease(renderPassEncoder);
+        renderPassEncoder.End();
 
         // Swap ping-pong textures at the end of the pass
         if (pass.name != "Image") {
@@ -848,17 +745,12 @@ void Renderer::Render() {
         }
     }
 
-    WGPUCommandBufferDescriptor cmdBufferDesc = {};
-    cmdBufferDesc.label = {"Renderer Command Buffer", WGPU_STRLEN};
-    WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(encoder, &cmdBufferDesc);
-    wgpuCommandEncoderRelease(encoder);
+    wgpu::CommandBufferDescriptor cmdBufferDesc;
+    cmdBufferDesc.label = "Renderer Command Buffer";
+    wgpu::CommandBuffer commandBuffer = encoder.Finish(&cmdBufferDesc);
 
-    WGPUCommandBuffer commandBuffers[1] = {commandBuffer};
-    wgpuQueueSubmit(queue, 1, commandBuffers);
-
-    wgpuCommandBufferRelease(commandBuffer);
-    wgpuTextureViewRelease(backBufferView);
-    wgpuQueueRelease(queue);
+    wgpu::CommandBuffer commandBuffers[1] = {commandBuffer};
+    queue.Submit(1, commandBuffers);
 
     mContext->Present();
 }
@@ -875,16 +767,9 @@ void Renderer::Resize(uint32_t width, uint32_t height) {
 
 void Renderer::CreateDepthTexture() {
     if (!mContext) return;
-    if (mDepthTextureView) {
-        wgpuTextureViewRelease(mDepthTextureView);
-        mDepthTextureView = nullptr;
-    }
-    if (mDepthTexture) {
-        // Do NOT call wgpuTextureDestroy here, as the texture may still be in flight on the GPU.
-        // Rely on WebGPU's reference counting to destroy the texture safely once the GPU is done.
-        wgpuTextureRelease(mDepthTexture);
-        mDepthTexture = nullptr;
-    }
+
+    mDepthTextureView = nullptr;
+    mDepthTexture = nullptr;
 
     uint32_t width = mContext->GetWidth();
     uint32_t height = mContext->GetHeight();
@@ -895,17 +780,17 @@ void Renderer::CreateDepthTexture() {
         height = 1;
     }
 
-    WGPUTextureDescriptor depthDesc = {};
-    depthDesc.label = {"Renderer Depth Texture", WGPU_STRLEN};
-    depthDesc.usage = WGPUTextureUsage_RenderAttachment;
-    depthDesc.dimension = WGPUTextureDimension_2D;
+    wgpu::TextureDescriptor depthDesc;
+    depthDesc.label = "Renderer Depth Texture";
+    depthDesc.usage = wgpu::TextureUsage::RenderAttachment;
+    depthDesc.dimension = wgpu::TextureDimension::e2D;
     depthDesc.size = {width, height, 1};
-    depthDesc.format = WGPUTextureFormat_Depth24PlusStencil8;
+    depthDesc.format = wgpu::TextureFormat::Depth24PlusStencil8;
     depthDesc.mipLevelCount = 1;
     depthDesc.sampleCount = 1;
     depthDesc.viewFormatCount = 0;
     depthDesc.viewFormats = nullptr;
 
-    mDepthTexture = wgpuDeviceCreateTexture(mContext->GetDevice(), &depthDesc);
-    mDepthTextureView = wgpuTextureCreateView(mDepthTexture, nullptr);
+    mDepthTexture = mContext->GetDevice().CreateTexture(&depthDesc);
+    mDepthTextureView = mDepthTexture.CreateView();
 }

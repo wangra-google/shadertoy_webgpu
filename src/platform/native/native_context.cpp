@@ -23,20 +23,7 @@ NativeContext::NativeContext(uint32_t width, uint32_t height) : mWidth(width), m
 
 NativeContext::~NativeContext() {
     if (mSurface) {
-        wgpuSurfaceUnconfigure(mSurface);
-        wgpuSurfaceRelease(mSurface);
-    }
-    if (mQueue) {
-        wgpuQueueRelease(mQueue);
-    }
-    if (mDevice) {
-        wgpuDeviceRelease(mDevice);
-    }
-    if (mAdapter) {
-        wgpuAdapterRelease(mAdapter);
-    }
-    if (mInstance) {
-        wgpuInstanceRelease(mInstance);
+        mSurface.Unconfigure();
     }
 
     if (mWindow) {
@@ -64,12 +51,14 @@ bool NativeContext::Init() {
         return false;
     }
 
-    // Set user pointer to context for callbacks
     glfwSetWindowUserPointer(mWindow, this);
 
-    // Create Instance
-    WGPUInstanceDescriptor instanceDesc = {};
-    mInstance = wgpuCreateInstance(&instanceDesc);
+    // Create Instance requesting TimedWaitAny to support blocking waits on futures
+    wgpu::InstanceDescriptor instanceDesc;
+    static constexpr auto kTimedWaitAny = wgpu::InstanceFeatureName::TimedWaitAny;
+    instanceDesc.requiredFeatureCount = 1;
+    instanceDesc.requiredFeatures = &kTimedWaitAny;
+    mInstance = wgpu::CreateInstance(&instanceDesc);
     if (!mInstance) {
         std::cerr << "Failed to create WGPU Instance!" << std::endl;
         return false;
@@ -80,37 +69,28 @@ bool NativeContext::Init() {
     HWND hwnd = glfwGetWin32Window(mWindow);
     HINSTANCE hinstance = GetModuleHandle(nullptr);
 
-    WGPUSurfaceSourceWindowsHWND winDesc = {};
-    winDesc.chain.sType = WGPUSType_SurfaceSourceWindowsHWND;
-    winDesc.chain.next = nullptr;
+    wgpu::SurfaceSourceWindowsHWND winDesc;
     winDesc.hwnd = hwnd;
     winDesc.hinstance = hinstance;
 
-    WGPUSurfaceDescriptor surfaceDesc = {};
-    surfaceDesc.nextInChain = &winDesc.chain;
-    mSurface = wgpuInstanceCreateSurface(mInstance, &surfaceDesc);
+    wgpu::SurfaceDescriptor surfaceDesc;
+    surfaceDesc.nextInChain = &winDesc;
+    mSurface = mInstance.CreateSurface(&surfaceDesc);
 #elif defined(__APPLE__)
-    // macOS Cocoa/Metal surface creation (stubbed/schematic for compilation)
-    // In a full macOS build, we would configure a CAMetalLayer on the NSWindow.
-    WGPUSurfaceSourceMetalLayer metalDesc = {};
-    metalDesc.chain.sType = WGPUSType_SurfaceSourceMetalLayer;
-    metalDesc.chain.next = nullptr;
+    wgpu::SurfaceSourceMetalLayer metalDesc;
     metalDesc.layer = nullptr; // Would be set to CAMetalLayer
 
-    WGPUSurfaceDescriptor surfaceDesc = {};
-    surfaceDesc.nextInChain = &metalDesc.chain;
-    mSurface = wgpuInstanceCreateSurface(mInstance, &surfaceDesc);
+    wgpu::SurfaceDescriptor surfaceDesc;
+    surfaceDesc.nextInChain = &metalDesc;
+    mSurface = mInstance.CreateSurface(&surfaceDesc);
 #else
-    // Linux X11 surface creation (stubbed/schematic for compilation)
-    WGPUSurfaceSourceXlibWindow x11Desc = {};
-    x11Desc.chain.sType = WGPUSType_SurfaceSourceXlibWindow;
-    x11Desc.chain.next = nullptr;
+    wgpu::SurfaceSourceXlibWindow x11Desc;
     x11Desc.display = glfwGetX11Display();
     x11Desc.window = glfwGetX11Window(mWindow);
 
-    WGPUSurfaceDescriptor surfaceDesc = {};
-    surfaceDesc.nextInChain = &x11Desc.chain;
-    mSurface = wgpuInstanceCreateSurface(mInstance, &surfaceDesc);
+    wgpu::SurfaceDescriptor surfaceDesc;
+    surfaceDesc.nextInChain = &x11Desc;
+    mSurface = mInstance.CreateSurface(&surfaceDesc);
 #endif
 
     if (!mSurface) {
@@ -119,139 +99,88 @@ bool NativeContext::Init() {
     }
 
     // Request Adapter
-    WGPURequestAdapterOptions options = {};
+    wgpu::RequestAdapterOptions options = {};
     options.compatibleSurface = mSurface;
-    options.powerPreference = WGPUPowerPreference_HighPerformance;
+    options.powerPreference = wgpu::PowerPreference::HighPerformance;
 
-    struct AdapterRequestResult {
-        WGPUAdapter adapter = nullptr;
-        bool completed = false;
-    } adapterResult;
-
-    WGPURequestAdapterCallbackInfo adapterCallbackInfo = {};
-    adapterCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
-    adapterCallbackInfo.callback = [](WGPURequestAdapterStatus status, WGPUAdapter adapter,
-                                      WGPUStringView message, void* userdata1, void* userdata2) {
-        auto* result = static_cast<AdapterRequestResult*>(userdata1);
-        if (status == WGPURequestAdapterStatus_Success) {
-            result->adapter = adapter;
-        } else {
-            std::cerr << "Request adapter failed: ";
-            if (message.data && message.length > 0) {
-                std::cerr.write(message.data, message.length);
+    wgpu::Adapter adapter = nullptr;
+    wgpu::Future adapterFuture = mInstance.RequestAdapter(
+        &options, wgpu::CallbackMode::WaitAnyOnly,
+        [&](wgpu::RequestAdapterStatus status, wgpu::Adapter adapterIn, wgpu::StringView message) {
+            if (status == wgpu::RequestAdapterStatus::Success) {
+                adapter = adapterIn;
             } else {
-                std::cerr << "Unknown error";
+                std::cerr << "Request adapter failed: "
+                          << (message.data ? std::string_view(message.data, message.length) : "Unknown error")
+                          << std::endl;
             }
-            std::cerr << std::endl;
-        }
-        result->completed = true;
-    };
-    adapterCallbackInfo.userdata1 = &adapterResult;
+        });
 
-    WGPUFuture adapterFuture =
-        wgpuInstanceRequestAdapter(mInstance, &options, adapterCallbackInfo);
+    mInstance.WaitAny(adapterFuture, UINT64_MAX);
 
-    WGPUFutureWaitInfo adapterWaitInfo = {};
-    adapterWaitInfo.future = adapterFuture;
-    adapterWaitInfo.completed = false;
-
-    while (!adapterResult.completed) {
-        wgpuInstanceWaitAny(mInstance, 1, &adapterWaitInfo, UINT64_MAX);
-    }
-
-    mAdapter = adapterResult.adapter;
+    mAdapter = adapter;
     if (!mAdapter) {
         std::cerr << "No compatible WGPU Adapter found!" << std::endl;
         return false;
     }
 
     // Enumerate features to check for optional TimestampQuery
-    std::vector<WGPUFeatureName> requiredFeatures;
-    WGPUSupportedFeatures supportedFeatures = {};
-    wgpuAdapterGetFeatures(mAdapter, &supportedFeatures);
+    std::vector<wgpu::FeatureName> requiredFeatures;
+    wgpu::SupportedFeatures supportedFeatures;
+    mAdapter.GetFeatures(&supportedFeatures);
     for (size_t i = 0; i < supportedFeatures.featureCount; ++i) {
-        if (supportedFeatures.features[i] == WGPUFeatureName_TimestampQuery) {
-            requiredFeatures.push_back(WGPUFeatureName_TimestampQuery);
+        if (supportedFeatures.features[i] == wgpu::FeatureName::TimestampQuery) {
+            requiredFeatures.push_back(wgpu::FeatureName::TimestampQuery);
             mTimestampsSupported = true;
             break;
         }
     }
 
     // Request Logical Device
-    WGPUDeviceDescriptor deviceDesc = {};
-    deviceDesc.label = {"Renderer Logical Device", WGPU_STRLEN};
+    wgpu::DeviceDescriptor deviceDesc;
+    deviceDesc.label = "Renderer Logical Device";
     deviceDesc.requiredFeatureCount = requiredFeatures.size();
     deviceDesc.requiredFeatures = requiredFeatures.data();
 
-    deviceDesc.uncapturedErrorCallbackInfo.callback = [](WGPUDevice const* device,
-                                                         WGPUErrorType type, WGPUStringView message,
-                                                         void* userdata1, void* userdata2) {
-        std::cerr << "WebGPU Uncaptured Error (Type " << type << "): ";
-        if (message.data && message.length > 0) {
-            std::cerr.write(message.data, message.length);
-        } else {
-            std::cerr << "Unknown error";
-        }
-        std::cerr << std::endl;
-    };
-    deviceDesc.uncapturedErrorCallbackInfo.userdata1 = nullptr;
+    // Setup uncaptured error callback
+    deviceDesc.SetUncapturedErrorCallback(
+        [](const wgpu::Device&, wgpu::ErrorType type, wgpu::StringView message) {
+            std::cerr << "WebGPU Uncaptured Error (Type " << static_cast<int>(type) << "): "
+                      << (message.data ? std::string_view(message.data, message.length) : "Unknown error")
+                      << std::endl;
+        });
 
     // Setup device lost callback
-    deviceDesc.deviceLostCallbackInfo.callback = [](WGPUDevice const* device,
-                                                     WGPUDeviceLostReason reason, WGPUStringView message,
-                                                     void* userdata1, void* userdata2) {
-        std::cerr << "WebGPU Device Lost (Reason " << reason << "): ";
-        if (message.data && message.length > 0) {
-            std::cerr.write(message.data, message.length);
-        } else {
-            std::cerr << "Unknown reason";
-        }
-        std::cerr << std::endl;
-    };
-    deviceDesc.deviceLostCallbackInfo.userdata1 = nullptr;
+    deviceDesc.SetDeviceLostCallback(
+        wgpu::CallbackMode::AllowSpontaneous,
+        [](const wgpu::Device&, wgpu::DeviceLostReason reason, wgpu::StringView message) {
+            std::cerr << "WebGPU Device Lost (Reason " << static_cast<int>(reason) << "): "
+                      << (message.data ? std::string_view(message.data, message.length) : "Unknown reason")
+                      << std::endl;
+        });
 
-    struct DeviceRequestResult {
-        WGPUDevice device = nullptr;
-        bool completed = false;
-    } deviceResult;
-
-    WGPURequestDeviceCallbackInfo deviceCallbackInfo = {};
-    deviceCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
-    deviceCallbackInfo.callback = [](WGPURequestDeviceStatus status, WGPUDevice device,
-                                     WGPUStringView message, void* userdata1, void* userdata2) {
-        auto* result = static_cast<DeviceRequestResult*>(userdata1);
-        if (status == WGPURequestDeviceStatus_Success) {
-            result->device = device;
-        } else {
-            std::cerr << "Request device failed: ";
-            if (message.data && message.length > 0) {
-                std::cerr.write(message.data, message.length);
+    wgpu::Device device = nullptr;
+    wgpu::Future deviceFuture = mAdapter.RequestDevice(
+        &deviceDesc, wgpu::CallbackMode::WaitAnyOnly,
+        [&](wgpu::RequestDeviceStatus status, wgpu::Device deviceIn, wgpu::StringView message) {
+            if (status == wgpu::RequestDeviceStatus::Success) {
+                device = deviceIn;
             } else {
-                std::cerr << "Unknown error";
+                std::cerr << "Request device failed: "
+                          << (message.data ? std::string_view(message.data, message.length) : "Unknown error")
+                          << std::endl;
             }
-            std::cerr << std::endl;
-        }
-        result->completed = true;
-    };
-    deviceCallbackInfo.userdata1 = &deviceResult;
+        });
 
-    WGPUFuture deviceFuture = wgpuAdapterRequestDevice(mAdapter, &deviceDesc, deviceCallbackInfo);
+    mInstance.WaitAny(deviceFuture, UINT64_MAX);
 
-    WGPUFutureWaitInfo deviceWaitInfo = {};
-    deviceWaitInfo.future = deviceFuture;
-    deviceWaitInfo.completed = false;
-
-    while (!deviceResult.completed) {
-        wgpuInstanceWaitAny(mInstance, 1, &deviceWaitInfo, UINT64_MAX);
-    }
-
-    mDevice = deviceResult.device;
+    mDevice = device;
     if (!mDevice) {
         std::cerr << "Failed to create WGPU Device!" << std::endl;
         return false;
     }
 
-    mQueue = wgpuDeviceGetQueue(mDevice);
+    mQueue = mDevice.GetQueue();
 
     // Initial Swapchain creation
     return CreateSwapChain(mWidth, mHeight);
@@ -265,50 +194,47 @@ bool NativeContext::CreateSwapChain(uint32_t width, uint32_t height) {
     mWidth = width;
     mHeight = height;
 
-    WGPUSurfaceConfiguration config = {};
+    wgpu::SurfaceConfiguration config = {};
     config.device = mDevice;
     config.format = mSwapChainFormat;
-    config.usage = WGPUTextureUsage_RenderAttachment;
+    config.usage = wgpu::TextureUsage::RenderAttachment;
     config.width = mWidth;
     config.height = mHeight;
-    config.presentMode = WGPUPresentMode_Fifo;
-    config.alphaMode = WGPUCompositeAlphaMode_Auto;
+    config.presentMode = wgpu::PresentMode::Fifo;
+    config.alphaMode = wgpu::CompositeAlphaMode::Auto;
 
-    wgpuSurfaceConfigure(mSurface, &config);
+    mSurface.Configure(&config);
     return true;
 }
 
-WGPUTextureView NativeContext::GetCurrentSwapChainView() {
-    WGPUSurfaceTexture surfaceTexture = {};
-    wgpuSurfaceGetCurrentTexture(mSurface, &surfaceTexture);
+wgpu::TextureView NativeContext::GetCurrentSwapChainView() {
+    wgpu::SurfaceTexture surfaceTexture = {};
+    mSurface.GetCurrentTexture(&surfaceTexture);
 
-    if (surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal &&
-        surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
-        std::cerr << "Failed to get current surface texture! Status: " << surfaceTexture.status
+    if (surfaceTexture.status != wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal &&
+        surfaceTexture.status != wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal) {
+        std::cerr << "Failed to get current surface texture! Status: " << static_cast<int>(surfaceTexture.status)
                   << std::endl;
         return nullptr;
     }
 
-    WGPUTextureViewDescriptor viewDesc = {};
-    viewDesc.label = {"SwapChain View", WGPU_STRLEN};
+    wgpu::TextureViewDescriptor viewDesc = {};
+    viewDesc.label = "SwapChain View";
     viewDesc.format = mSwapChainFormat;
-    viewDesc.dimension = WGPUTextureViewDimension_2D;
+    viewDesc.dimension = wgpu::TextureViewDimension::e2D;
     viewDesc.baseMipLevel = 0;
     viewDesc.mipLevelCount = 1;
     viewDesc.baseArrayLayer = 0;
     viewDesc.arrayLayerCount = 1;
-    viewDesc.aspect = WGPUTextureAspect_All;
+    viewDesc.aspect = wgpu::TextureAspect::All;
 
-    WGPUTextureView view = wgpuTextureCreateView(surfaceTexture.texture, &viewDesc);
-
-    // Release the texture reference returned by wgpuSurfaceGetCurrentTexture
-    wgpuTextureRelease(surfaceTexture.texture);
+    wgpu::TextureView view = surfaceTexture.texture.CreateView(&viewDesc);
 
     return view;
 }
 
 void NativeContext::Present() {
-    wgpuSurfacePresent(mSurface);
+    mSurface.Present();
 }
 
 bool NativeContext::ShouldClose() const {
@@ -321,6 +247,6 @@ bool NativeContext::ShouldClose() const {
 void NativeContext::PollEvents() {
     glfwPollEvents();
     if (mInstance) {
-        wgpuInstanceProcessEvents(mInstance);
+        mInstance.ProcessEvents();
     }
 }

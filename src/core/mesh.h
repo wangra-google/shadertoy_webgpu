@@ -2,7 +2,7 @@
 #define CORE_MESH_H_
 
 #include <cstdint>
-#include <webgpu/webgpu.h>
+#include <webgpu/webgpu_cpp.h>
 
 #include <memory>
 #include <vector>
@@ -16,23 +16,23 @@ struct Vertex {
 
 class Mesh {
   public:
-    Mesh(WGPUDevice device,
+    Mesh(wgpu::Device device,
          const std::vector<Vertex>& vertices,
          const std::vector<uint32_t>& indices);
     ~Mesh();
 
-    void Draw(WGPURenderPassEncoder renderPass) const;
+    void Draw(wgpu::RenderPassEncoder renderPass) const;
 
     uint32_t GetIndexCount() const { return mIndexCount; }
 
-    static std::unique_ptr<Mesh> CreateQuad(WGPUDevice device);
-    static std::unique_ptr<Mesh> CreateCube(WGPUDevice device);
-    static std::unique_ptr<Mesh> CreateSphere(WGPUDevice device, uint32_t subdivisions = 32);
+    static std::unique_ptr<Mesh> CreateQuad(wgpu::Device device);
+    static std::unique_ptr<Mesh> CreateCube(wgpu::Device device);
+    static std::unique_ptr<Mesh> CreateSphere(wgpu::Device device, uint32_t subdivisions = 32);
 
   private:
-    WGPUDevice mDevice = nullptr;
-    WGPUBuffer mVertexBuffer = nullptr;
-    WGPUBuffer mIndexBuffer = nullptr;
+    wgpu::Device mDevice = nullptr;
+    wgpu::Buffer mVertexBuffer = nullptr;
+    wgpu::Buffer mIndexBuffer = nullptr;
     uint32_t mVertexCount = 0;
     uint32_t mIndexCount = 0;
 };

@@ -2,7 +2,7 @@
 #define PLATFORM_NATIVE_NATIVE_CONTEXT_H_
 
 #include <cstdint>
-#include <webgpu/webgpu.h>
+#include <webgpu/webgpu_cpp.h>
 
 #include "core/graphics_context.h"
 
@@ -16,12 +16,12 @@ class NativeContext : public GraphicsContext {
     bool Init() override;
     bool CreateSwapChain(uint32_t width, uint32_t height) override;
 
-    WGPUDevice GetDevice() const override { return mDevice; }
-    WGPUQueue GetQueue() const override { return mQueue; }
-    WGPUSurface GetSurface() const override { return mSurface; }
-    WGPUTextureFormat GetSwapChainFormat() const override { return mSwapChainFormat; }
+    wgpu::Device GetDevice() const override { return mDevice; }
+    wgpu::Queue GetQueue() const override { return mQueue; }
+    wgpu::Surface GetSurface() const override { return mSurface; }
+    wgpu::TextureFormat GetSwapChainFormat() const override { return mSwapChainFormat; }
 
-    WGPUTextureView GetCurrentSwapChainView() override;
+    wgpu::TextureView GetCurrentSwapChainView() override;
     void Present() override;
 
     uint32_t GetWidth() const override { return mWidth; }
@@ -38,12 +38,12 @@ class NativeContext : public GraphicsContext {
     uint32_t mHeight = 0;
     GLFWwindow* mWindow = nullptr;
 
-    WGPUInstance mInstance = nullptr;
-    WGPUSurface mSurface = nullptr;
-    WGPUAdapter mAdapter = nullptr;
-    WGPUDevice mDevice = nullptr;
-    WGPUQueue mQueue = nullptr;
-    WGPUTextureFormat mSwapChainFormat = WGPUTextureFormat_BGRA8Unorm;
+    wgpu::Instance mInstance = nullptr;
+    wgpu::Surface mSurface = nullptr;
+    wgpu::Adapter mAdapter = nullptr;
+    wgpu::Device mDevice = nullptr;
+    wgpu::Queue mQueue = nullptr;
+    wgpu::TextureFormat mSwapChainFormat = wgpu::TextureFormat::BGRA8Unorm;
 
     bool mTimestampsSupported = false;
 };

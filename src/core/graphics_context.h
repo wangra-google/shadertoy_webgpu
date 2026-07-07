@@ -2,7 +2,7 @@
 #define CORE_GRAPHICS_CONTEXT_H_
 
 #include <cstdint>
-#include <webgpu/webgpu.h>
+#include <webgpu/webgpu_cpp.h>
 
 class GraphicsContext {
   public:
@@ -13,13 +13,13 @@ class GraphicsContext {
     virtual bool CreateSwapChain(uint32_t width, uint32_t height) = 0;
 
     // Context Getters
-    virtual WGPUDevice GetDevice() const = 0;
-    virtual WGPUQueue GetQueue() const = 0;
-    virtual WGPUSurface GetSurface() const = 0;
-    virtual WGPUTextureFormat GetSwapChainFormat() const = 0;
+    virtual wgpu::Device GetDevice() const = 0;
+    virtual wgpu::Queue GetQueue() const = 0;
+    virtual wgpu::Surface GetSurface() const = 0;
+    virtual wgpu::TextureFormat GetSwapChainFormat() const = 0;
 
     // Frame Execution Hooks
-    virtual WGPUTextureView GetCurrentSwapChainView() = 0;
+    virtual wgpu::TextureView GetCurrentSwapChainView() = 0;
     virtual void Present() = 0;
 
     // Screen Properties

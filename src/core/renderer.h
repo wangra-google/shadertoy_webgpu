@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <webgpu/webgpu_cpp.h>
 #include "core/graphics_context.h"
 #include "core/math_utils.h"
 #include "core/mesh.h"
@@ -47,9 +48,9 @@ class Renderer {
         bool enabled = false;
         
         // WebGPU Pipeline Objects
-        WGPUShaderModule vertexShaderModule = nullptr;
-        WGPUShaderModule fragmentShaderModule = nullptr;
-        WGPURenderPipeline pipeline = nullptr;
+        wgpu::ShaderModule vertexShaderModule = nullptr;
+        wgpu::ShaderModule fragmentShaderModule = nullptr;
+        wgpu::RenderPipeline pipeline = nullptr;
         
         // Shader entry points
         std::string vertexEntryPoint = "vs_main";
@@ -62,8 +63,8 @@ class Renderer {
         uint64_t latestRequestedCompilationId = 0;
 
         // Cached Bind Group 1 & bound texture views
-        WGPUBindGroup bindGroup1 = nullptr;
-        WGPUTextureView boundViews[4] = {nullptr, nullptr, nullptr, nullptr};
+        wgpu::BindGroup bindGroup1 = nullptr;
+        wgpu::TextureView boundViews[4] = {nullptr, nullptr, nullptr, nullptr};
     };
 
     explicit Renderer(GraphicsContext* context);
@@ -99,19 +100,19 @@ class Renderer {
     void LoadTextureData(const std::string& name, const void* pixels, uint32_t width, uint32_t height, const std::string& format);
 
     // Swap compiled pipeline asynchronously for a specific pass (called from WebGPU callback)
-    void SwapPipeline(const std::string& passName, WGPURenderPipeline newPipeline, WGPUShaderModule newModule, ShaderStage stage, const std::string& entryPoint);
+    void SwapPipeline(const std::string& passName, wgpu::RenderPipeline newPipeline, wgpu::ShaderModule newModule, ShaderStage stage, const std::string& entryPoint);
 
     // Get the texture manager
     TextureManager* GetTextureManager() const { return mTextureManager.get(); }
 
   private:
     RenderPass* FindPass(const std::string& name);
-    bool CreatePipeline(RenderPass& pass, WGPUShaderModule newModule, ShaderStage stage, uint64_t compilationId, bool isAsync,
+    bool CreatePipeline(RenderPass& pass, wgpu::ShaderModule newModule, ShaderStage stage, uint64_t compilationId, bool isAsync,
                         const std::string& vertexEntryPoint, const std::string& fragmentEntryPoint,
                         std::function<void(bool, const std::string&)> callback = nullptr);
     void UpdateUniformBuffers();
     void CreateDepthTexture();
-    WGPUBindGroup GetOrCreateBindGroup1(RenderPass& pass);
+    wgpu::BindGroup GetOrCreateBindGroup1(RenderPass& pass);
 
     GraphicsContext* mContext = nullptr;
 
@@ -122,14 +123,14 @@ class Renderer {
     std::unique_ptr<TextureManager> mTextureManager = nullptr;
 
     // WebGPU Pipeline Layout Objects
-    WGPUBindGroupLayout mBindGroupLayout = nullptr;  // Group 0: Uniforms
-    WGPUBindGroupLayout mBindGroupLayout1 = nullptr; // Group 1: Textures
-    WGPUPipelineLayout mPipelineLayout = nullptr;
-    WGPUBindGroup mBindGroup = nullptr;             // Group 0 Bind Group (Shared)
+    wgpu::BindGroupLayout mBindGroupLayout = nullptr;  // Group 0: Uniforms
+    wgpu::BindGroupLayout mBindGroupLayout1 = nullptr; // Group 1: Textures
+    wgpu::PipelineLayout mPipelineLayout = nullptr;
+    wgpu::BindGroup mBindGroup = nullptr;             // Group 0 Bind Group (Shared)
 
     // Uniform Buffers & CPU Structs
-    WGPUBuffer mShadertoyUniformBuffer = nullptr;
-    WGPUBuffer mCameraUniformBuffer = nullptr;
+    wgpu::Buffer mShadertoyUniformBuffer = nullptr;
+    wgpu::Buffer mCameraUniformBuffer = nullptr;
 
     ShadertoyUniforms mShadertoyUniformsVal = {};
     CameraUniforms mCameraUniformsVal = {};
@@ -141,8 +142,8 @@ class Renderer {
     GeometryType mGeometryType = GeometryType::Quad;
 
     // Depth Stencil (Shared across passes)
-    WGPUTexture mDepthTexture = nullptr;
-    WGPUTextureView mDepthTextureView = nullptr;
+    wgpu::Texture mDepthTexture = nullptr;
+    wgpu::TextureView mDepthTextureView = nullptr;
 
     // Render passes (BufferA, BufferB, BufferC, BufferD, Image)
     std::vector<RenderPass> mPasses;

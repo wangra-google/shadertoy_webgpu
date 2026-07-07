@@ -9,154 +9,110 @@ WebContext::WebContext(const std::string& canvasSelector, uint32_t width, uint32
 
 WebContext::~WebContext() {
     if (mSurface) {
-        wgpuSurfaceUnconfigure(mSurface);
-        wgpuSurfaceRelease(mSurface);
-    }
-    if (mQueue) {
-        wgpuQueueRelease(mQueue);
-    }
-    if (mDevice) {
-        wgpuDeviceRelease(mDevice);
-    }
-    if (mAdapter) {
-        wgpuAdapterRelease(mAdapter);
-    }
-    if (mInstance) {
-        wgpuInstanceRelease(mInstance);
+        mSurface.Unconfigure();
     }
 }
 
 bool WebContext::Init() {
     // Create Instance
-    WGPUInstanceDescriptor instanceDesc = {};
-    mInstance = wgpuCreateInstance(&instanceDesc);
+    wgpu::InstanceDescriptor instanceDesc;
+    mInstance = wgpu::CreateInstance(&instanceDesc);
     if (!mInstance) {
         std::cerr << "Failed to create WGPU Instance!" << std::endl;
         return false;
     }
 
-    // Create Surface from Canvas HTML Selector
-    WGPUEmscriptenSurfaceSourceCanvasHTMLSelector canvasDesc = {};
-    canvasDesc.chain.sType = WGPUSType_EmscriptenSurfaceSourceCanvasHTMLSelector;
-    canvasDesc.chain.next = nullptr;
-    canvasDesc.selector = {mCanvasSelector.c_str(), WGPU_STRLEN};
+    // Create Surface from Canvas HTML Selector using Emscripten specific extension struct
+    wgpu::EmscriptenSurfaceSourceCanvasHTMLSelector canvasDesc;
+    canvasDesc.selector = mCanvasSelector.c_str();
 
-    WGPUSurfaceDescriptor surfaceDesc = {};
-    surfaceDesc.nextInChain = &canvasDesc.chain;
-    mSurface = wgpuInstanceCreateSurface(mInstance, &surfaceDesc);
+    wgpu::SurfaceDescriptor surfaceDesc;
+    surfaceDesc.nextInChain = &canvasDesc;
+    mSurface = mInstance.CreateSurface(&surfaceDesc);
     if (!mSurface) {
         std::cerr << "Failed to create WGPU Surface from canvas selector!" << std::endl;
         return false;
     }
 
     // Request Adapter
-    WGPURequestAdapterOptions options = {};
+    wgpu::RequestAdapterOptions options = {};
     options.compatibleSurface = mSurface;
-    options.powerPreference = WGPUPowerPreference_HighPerformance;
+    options.powerPreference = wgpu::PowerPreference::HighPerformance;
 
-    struct AdapterRequestResult {
-        WGPUAdapter adapter = nullptr;
-        bool completed = false;
-    } adapterResult;
+    wgpu::Adapter adapter = nullptr;
+    bool adapterCompleted = false;
 
-    WGPURequestAdapterCallbackInfo adapterCallbackInfo = {};
-    adapterCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
-    adapterCallbackInfo.callback = [](WGPURequestAdapterStatus status, WGPUAdapter adapter,
-                                      WGPUStringView message, void* userdata1, void* userdata2) {
-        auto* result = static_cast<AdapterRequestResult*>(userdata1);
-        if (status == WGPURequestAdapterStatus_Success) {
-            result->adapter = adapter;
-        } else {
-            std::cerr << "Request adapter failed: ";
-            if (message.data && message.length > 0) {
-                std::cerr.write(message.data, message.length);
+    wgpu::Future adapterFuture = mInstance.RequestAdapter(
+        &options,
+        wgpu::CallbackMode::AllowSpontaneous,
+        [&](wgpu::RequestAdapterStatus status, wgpu::Adapter adapterIn, const char* message) {
+            if (status == wgpu::RequestAdapterStatus::Success) {
+                adapter = adapterIn;
             } else {
-                std::cerr << "Unknown error";
+                std::cerr << "Request adapter failed: " << (message ? message : "Unknown error") << std::endl;
             }
-            std::cerr << std::endl;
+            adapterCompleted = true;
         }
-        result->completed = true;
-    };
-    adapterCallbackInfo.userdata1 = &adapterResult;
+    );
 
-    WGPUFuture adapterFuture =
-        wgpuInstanceRequestAdapter(mInstance, &options, adapterCallbackInfo);
-
-    WGPUFutureWaitInfo adapterWaitInfo = {};
+    wgpu::FutureWaitInfo adapterWaitInfo = {};
     adapterWaitInfo.future = adapterFuture;
     adapterWaitInfo.completed = false;
 
-    while (!adapterResult.completed) {
-        wgpuInstanceWaitAny(mInstance, 1, &adapterWaitInfo, 0);
+    while (!adapterCompleted) {
+        mInstance.WaitAny(1, &adapterWaitInfo, 0);
         emscripten_sleep(1);
     }
 
-    mAdapter = adapterResult.adapter;
+    mAdapter = adapter;
     if (!mAdapter) {
         std::cerr << "No compatible WGPU Adapter found!" << std::endl;
         return false;
     }
 
     // Request Logical Device
-    WGPUDeviceDescriptor deviceDesc = {};
-    deviceDesc.label = {"Web Logical Device", WGPU_STRLEN};
+    wgpu::DeviceDescriptor deviceDesc;
+    deviceDesc.label = "Web Logical Device";
 
-    deviceDesc.uncapturedErrorCallbackInfo.callback = [](WGPUDevice const* device,
-                                                         WGPUErrorType type, WGPUStringView message,
-                                                         void* userdata1, void* userdata2) {
-         std::cerr << "WebGPU Uncaptured Error (Type " << type << "): ";
-         if (message.data && message.length > 0) {
-             std::cerr.write(message.data, message.length);
-         } else {
-             std::cerr << "Unknown error";
-         }
-         std::cerr << std::endl;
-     };
-     deviceDesc.uncapturedErrorCallbackInfo.userdata1 = nullptr;
+    deviceDesc.SetUncapturedErrorCallback(
+        [](const wgpu::Device&, wgpu::ErrorType type, wgpu::StringView message) {
+            std::cerr << "WebGPU Uncaptured Error (Type " << static_cast<int>(type) << "): "
+                      << (message.data ? std::string_view(message.data, message.length) : "Unknown error")
+                      << std::endl;
+        });
 
-    struct DeviceRequestResult {
-        WGPUDevice device = nullptr;
-        bool completed = false;
-    } deviceResult;
+    wgpu::Device device = nullptr;
+    bool deviceCompleted = false;
 
-    WGPURequestDeviceCallbackInfo deviceCallbackInfo = {};
-    deviceCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
-    deviceCallbackInfo.callback = [](WGPURequestDeviceStatus status, WGPUDevice device,
-                                     WGPUStringView message, void* userdata1, void* userdata2) {
-        auto* result = static_cast<DeviceRequestResult*>(userdata1);
-        if (status == WGPURequestDeviceStatus_Success) {
-            result->device = device;
-        } else {
-            std::cerr << "Request device failed: ";
-            if (message.data && message.length > 0) {
-                std::cerr.write(message.data, message.length);
+    wgpu::Future deviceFuture = mAdapter.RequestDevice(
+        &deviceDesc,
+        wgpu::CallbackMode::AllowSpontaneous,
+        [&](wgpu::RequestDeviceStatus status, wgpu::Device deviceIn, const char* message) {
+            if (status == wgpu::RequestDeviceStatus::Success) {
+                device = deviceIn;
             } else {
-                std::cerr << "Unknown error";
+                std::cerr << "Request device failed: " << (message ? message : "Unknown error") << std::endl;
             }
-            std::cerr << std::endl;
+            deviceCompleted = true;
         }
-        result->completed = true;
-    };
-    deviceCallbackInfo.userdata1 = &deviceResult;
+    );
 
-    WGPUFuture deviceFuture = wgpuAdapterRequestDevice(mAdapter, &deviceDesc, deviceCallbackInfo);
-
-    WGPUFutureWaitInfo deviceWaitInfo = {};
+    wgpu::FutureWaitInfo deviceWaitInfo = {};
     deviceWaitInfo.future = deviceFuture;
     deviceWaitInfo.completed = false;
 
-    while (!deviceResult.completed) {
-        wgpuInstanceWaitAny(mInstance, 1, &deviceWaitInfo, 0);
+    while (!deviceCompleted) {
+        mInstance.WaitAny(1, &deviceWaitInfo, 0);
         emscripten_sleep(1);
     }
 
-    mDevice = deviceResult.device;
+    mDevice = device;
     if (!mDevice) {
         std::cerr << "Failed to create WGPU Device!" << std::endl;
         return false;
     }
 
-    mQueue = wgpuDeviceGetQueue(mDevice);
+    mQueue = mDevice.GetQueue();
 
     return CreateSwapChain(mWidth, mHeight);
 }
@@ -168,44 +124,41 @@ bool WebContext::CreateSwapChain(uint32_t width, uint32_t height) {
     mWidth = width;
     mHeight = height;
 
-    WGPUSurfaceConfiguration config = {};
+    wgpu::SurfaceConfiguration config = {};
     config.device = mDevice;
     config.format = mSwapChainFormat;
-    config.usage = WGPUTextureUsage_RenderAttachment;
+    config.usage = wgpu::TextureUsage::RenderAttachment;
     config.width = mWidth;
     config.height = mHeight;
-    config.presentMode = WGPUPresentMode_Fifo;
-    config.alphaMode = WGPUCompositeAlphaMode_Auto;
+    config.presentMode = wgpu::PresentMode::Fifo;
+    config.alphaMode = wgpu::CompositeAlphaMode::Auto;
 
-    wgpuSurfaceConfigure(mSurface, &config);
+    mSurface.Configure(&config);
     return true;
 }
 
-WGPUTextureView WebContext::GetCurrentSwapChainView() {
-    WGPUSurfaceTexture surfaceTexture = {};
-    wgpuSurfaceGetCurrentTexture(mSurface, &surfaceTexture);
+wgpu::TextureView WebContext::GetCurrentSwapChainView() {
+    wgpu::SurfaceTexture surfaceTexture = {};
+    mSurface.GetCurrentTexture(&surfaceTexture);
 
-    if (surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal &&
-        surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
-        std::cerr << "Failed to get current surface texture! Status: " << surfaceTexture.status
+    if (surfaceTexture.status != wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal &&
+        surfaceTexture.status != wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal) {
+        std::cerr << "Failed to get current surface texture! Status: " << static_cast<int>(surfaceTexture.status)
                   << std::endl;
         return nullptr;
     }
 
-    WGPUTextureViewDescriptor viewDesc = {};
-    viewDesc.label = {"Web SwapChain View", WGPU_STRLEN};
+    wgpu::TextureViewDescriptor viewDesc = {};
+    viewDesc.label = "Web SwapChain View";
     viewDesc.format = mSwapChainFormat;
-    viewDesc.dimension = WGPUTextureViewDimension_2D;
+    viewDesc.dimension = wgpu::TextureViewDimension::e2D;
     viewDesc.baseMipLevel = 0;
     viewDesc.mipLevelCount = 1;
     viewDesc.baseArrayLayer = 0;
     viewDesc.arrayLayerCount = 1;
-    viewDesc.aspect = WGPUTextureAspect_All;
+    viewDesc.aspect = wgpu::TextureAspect::All;
 
-    WGPUTextureView view = wgpuTextureCreateView(surfaceTexture.texture, &viewDesc);
-
-    // Release the texture reference returned by wgpuSurfaceGetCurrentTexture
-    wgpuTextureRelease(surfaceTexture.texture);
+    wgpu::TextureView view = surfaceTexture.texture.CreateView(&viewDesc);
 
     return view;
 }

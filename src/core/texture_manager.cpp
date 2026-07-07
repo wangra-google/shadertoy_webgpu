@@ -2,7 +2,7 @@
 #include <iostream>
 #include <cstring>
 
-TextureManager::TextureManager(WGPUDevice device) : mDevice(device) {
+TextureManager::TextureManager(wgpu::Device device) : mDevice(device) {
     CreateDefaultResources();
 }
 
@@ -21,53 +21,37 @@ TextureManager::~TextureManager() {
     mRenderTargets.clear();
 
     // Release default resources
-    if (mDefaultTextureView) {
-        wgpuTextureViewRelease(mDefaultTextureView);
-    }
     if (mDefaultTexture) {
-        wgpuTextureDestroy(mDefaultTexture);
-        wgpuTextureRelease(mDefaultTexture);
-    }
-    if (mDefaultSampler) {
-        wgpuSamplerRelease(mDefaultSampler);
+        mDefaultTexture.Destroy();
     }
 }
 
 void TextureManager::ReleaseTextureResource(TextureResource& res) {
-    if (res.view) {
-        wgpuTextureViewRelease(res.view);
-        res.view = nullptr;
-    }
-    if (res.texture) {
-        // Do NOT call wgpuTextureDestroy here, as the texture may still be in flight on the GPU.
-        // Rely on WebGPU's reference counting to destroy the texture safely once the GPU is done.
-        wgpuTextureRelease(res.texture);
-        res.texture = nullptr;
-    }
+    // Automatic reference count release on assignment of nullptr
+    res.view = nullptr;
+    res.texture = nullptr;
 }
 
-bool TextureManager::AllocateTextureResource(TextureResource& res, uint32_t width, uint32_t height, WGPUTextureFormat format, WGPUTextureUsage usage) {
+bool TextureManager::AllocateTextureResource(TextureResource& res, uint32_t width, uint32_t height, wgpu::TextureFormat format, wgpu::TextureUsage usage) {
     ReleaseTextureResource(res);
 
-    WGPUTextureDescriptor desc = {};
-    desc.dimension = WGPUTextureDimension_2D;
+    wgpu::TextureDescriptor desc;
+    desc.dimension = wgpu::TextureDimension::e2D;
     desc.size = {width, height, 1};
     desc.format = format;
     desc.mipLevelCount = 1;
     desc.sampleCount = 1;
     desc.usage = usage;
 
-    res.texture = wgpuDeviceCreateTexture(mDevice, &desc);
+    res.texture = mDevice.CreateTexture(&desc);
     if (!res.texture) {
         std::cerr << "TextureManager: Failed to create texture of size " << width << "x" << height << std::endl;
         return false;
     }
 
-    res.view = wgpuTextureCreateView(res.texture, nullptr);
+    res.view = res.texture.CreateView();
     if (!res.view) {
         std::cerr << "TextureManager: Failed to create texture view." << std::endl;
-        wgpuTextureDestroy(res.texture);
-        wgpuTextureRelease(res.texture);
         res.texture = nullptr;
         return false;
     }
@@ -81,77 +65,75 @@ bool TextureManager::AllocateTextureResource(TextureResource& res, uint32_t widt
 void TextureManager::CreateDefaultResources() {
     // 1x1 Black Texture
     uint32_t blackPixel = 0xFF000000; // RGBA8 black
-    WGPUTextureUsage usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+    wgpu::TextureUsage usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
     
     TextureResource defaultRes;
-    if (AllocateTextureResource(defaultRes, 1, 1, WGPUTextureFormat_RGBA8Unorm, usage)) {
+    if (AllocateTextureResource(defaultRes, 1, 1, wgpu::TextureFormat::RGBA8Unorm, usage)) {
         mDefaultTexture = defaultRes.texture;
         mDefaultTextureView = defaultRes.view;
         
-        WGPUTexelCopyTextureInfo destination = {};
+        wgpu::TexelCopyTextureInfo destination = {};
         destination.texture = mDefaultTexture;
         destination.mipLevel = 0;
         destination.origin = {0, 0, 0};
-        destination.aspect = WGPUTextureAspect_All;
+        destination.aspect = wgpu::TextureAspect::All;
 
-        WGPUTexelCopyBufferLayout dataLayout = {};
+        wgpu::TexelCopyBufferLayout dataLayout = {};
         dataLayout.offset = 0;
         dataLayout.bytesPerRow = 4;
         dataLayout.rowsPerImage = 1;
 
-        WGPUExtent3D writeSize = {1, 1, 1};
+        wgpu::Extent3D writeSize = {1, 1, 1};
 
-        WGPUQueue queue = wgpuDeviceGetQueue(mDevice);
-        wgpuQueueWriteTexture(queue, &destination, &blackPixel, 4, &dataLayout, &writeSize);
-        wgpuQueueRelease(queue);
+        wgpu::Queue queue = mDevice.GetQueue();
+        queue.WriteTexture(&destination, &blackPixel, 4, &dataLayout, &writeSize);
     }
 
     // Default Sampler (Bilinear, Repeat)
-    WGPUSamplerDescriptor samplerDesc = {};
-    samplerDesc.addressModeU = WGPUAddressMode_Repeat;
-    samplerDesc.addressModeV = WGPUAddressMode_Repeat;
-    samplerDesc.addressModeW = WGPUAddressMode_Repeat;
-    samplerDesc.magFilter = WGPUFilterMode_Linear;
-    samplerDesc.minFilter = WGPUFilterMode_Linear;
-    samplerDesc.mipmapFilter = WGPUMipmapFilterMode_Linear;
+    wgpu::SamplerDescriptor samplerDesc;
+    samplerDesc.addressModeU = wgpu::AddressMode::Repeat;
+    samplerDesc.addressModeV = wgpu::AddressMode::Repeat;
+    samplerDesc.addressModeW = wgpu::AddressMode::Repeat;
+    samplerDesc.magFilter = wgpu::FilterMode::Linear;
+    samplerDesc.minFilter = wgpu::FilterMode::Linear;
+    samplerDesc.mipmapFilter = wgpu::MipmapFilterMode::Linear;
     samplerDesc.lodMinClamp = 0.0f;
     samplerDesc.lodMaxClamp = 32.0f;
     samplerDesc.maxAnisotropy = 1;
-    samplerDesc.compare = WGPUCompareFunction_Undefined;
+    samplerDesc.compare = wgpu::CompareFunction::Undefined;
 
-    mDefaultSampler = wgpuDeviceCreateSampler(mDevice, &samplerDesc);
+    mDefaultSampler = mDevice.CreateSampler(&samplerDesc);
 }
 
-bool TextureManager::CreateStaticTexture(const std::string& name, const void* pixels, uint32_t width, uint32_t height, WGPUTextureFormat format) {
-    WGPUTextureUsage usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+bool TextureManager::CreateStaticTexture(const std::string& name, const void* pixels, uint32_t width, uint32_t height, wgpu::TextureFormat format) {
+    wgpu::TextureUsage usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
     
     TextureResource res;
     if (!AllocateTextureResource(res, width, height, format, usage)) {
         return false;
     }
 
-    WGPUTexelCopyTextureInfo destination = {};
+    wgpu::TexelCopyTextureInfo destination = {};
     destination.texture = res.texture;
     destination.mipLevel = 0;
     destination.origin = {0, 0, 0};
-    destination.aspect = WGPUTextureAspect_All;
+    destination.aspect = wgpu::TextureAspect::All;
 
     // Calculate bytes per row based on format
     uint32_t bytesPerPixel = 4; // Default RGBA8
-    if (format == WGPUTextureFormat_RGBA16Float) {
+    if (format == wgpu::TextureFormat::RGBA16Float) {
         bytesPerPixel = 8;
     }
 
-    WGPUTexelCopyBufferLayout dataLayout = {};
+    wgpu::TexelCopyBufferLayout dataLayout = {};
     dataLayout.offset = 0;
     dataLayout.bytesPerRow = width * bytesPerPixel;
     dataLayout.rowsPerImage = height;
 
-    WGPUExtent3D writeSize = {width, height, 1};
+    wgpu::Extent3D writeSize = {width, height, 1};
 
-    WGPUQueue queue = wgpuDeviceGetQueue(mDevice);
-    wgpuQueueWriteTexture(queue, &destination, pixels, width * height * bytesPerPixel, &dataLayout, &writeSize);
-    wgpuQueueRelease(queue);
+    wgpu::Queue queue = mDevice.GetQueue();
+    queue.WriteTexture(&destination, pixels, width * height * bytesPerPixel, &dataLayout, &writeSize);
 
     // If it already exists, release the old one first
     auto it = mStaticTextures.find(name);
@@ -162,8 +144,8 @@ bool TextureManager::CreateStaticTexture(const std::string& name, const void* pi
     return true;
 }
 
-bool TextureManager::CreateRenderTarget(const std::string& name, uint32_t width, uint32_t height, WGPUTextureFormat format, bool pingPong) {
-    WGPUTextureUsage usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc;
+bool TextureManager::CreateRenderTarget(const std::string& name, uint32_t width, uint32_t height, wgpu::TextureFormat format, bool pingPong) {
+    wgpu::TextureUsage usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
 
     PingPongTexture ppTex;
     ppTex.isPingPong = pingPong;
@@ -212,7 +194,7 @@ void TextureManager::ResizeRenderTargets(uint32_t width, uint32_t height) {
     if (width == 0) width = 1;
     if (height == 0) height = 1;
 
-    WGPUTextureUsage usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc;
+    wgpu::TextureUsage usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
 
     for (const auto& info : mDynamicRenderTargets) {
         auto it = mRenderTargets.find(info.name);
@@ -232,7 +214,7 @@ void TextureManager::ResizeRenderTargets(uint32_t width, uint32_t height) {
     }
 }
 
-WGPUTextureView TextureManager::GetReadView(const std::string& name) const {
+wgpu::TextureView TextureManager::GetReadView(const std::string& name) const {
     // Check static textures first
     auto itStatic = mStaticTextures.find(name);
     if (itStatic != mStaticTextures.end()) {
@@ -249,7 +231,7 @@ WGPUTextureView TextureManager::GetReadView(const std::string& name) const {
     return mDefaultTextureView;
 }
 
-WGPUTextureView TextureManager::GetWriteView(const std::string& name) const {
+wgpu::TextureView TextureManager::GetWriteView(const std::string& name) const {
     auto itRT = mRenderTargets.find(name);
     if (itRT != mRenderTargets.end()) {
         return itRT->second.GetWriteResource().view;
@@ -264,7 +246,7 @@ void TextureManager::SwapPingPong(const std::string& name) {
     }
 }
 
-WGPUTextureFormat TextureManager::GetFormat(const std::string& name) const {
+wgpu::TextureFormat TextureManager::GetFormat(const std::string& name) const {
     auto itRT = mRenderTargets.find(name);
     if (itRT != mRenderTargets.end()) {
         return itRT->second.resources[0].format;
@@ -273,5 +255,5 @@ WGPUTextureFormat TextureManager::GetFormat(const std::string& name) const {
     if (itStatic != mStaticTextures.end()) {
         return itStatic->second.format;
     }
-    return WGPUTextureFormat_Undefined;
+    return wgpu::TextureFormat::Undefined;
 }
