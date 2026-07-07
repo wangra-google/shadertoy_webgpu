@@ -1,6 +1,6 @@
 #ifndef CORE_RENDERER_H_
 #define CORE_RENDERER_H_
-
+#include <array>
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -57,14 +57,14 @@ class Renderer {
         std::string fragmentEntryPoint = "fs_main";
         
         // Input texture names for iChannel0..3
-        std::string inputs[4] = {"", "", "", ""};
+        std::array<std::string, 4> inputs = {};
         
         // Track compilation requests to prevent race conditions
         uint64_t latestRequestedCompilationId = 0;
 
         // Cached Bind Group 1 & bound texture views
         wgpu::BindGroup bindGroup1 = nullptr;
-        wgpu::TextureView boundViews[4] = {nullptr, nullptr, nullptr, nullptr};
+        std::array<wgpu::TextureView, 4> boundViews = {};
     };
 
     explicit Renderer(GraphicsContext* context);

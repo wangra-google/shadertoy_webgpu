@@ -99,7 +99,7 @@ bool NativeContext::Init() {
     }
 
     // Request Adapter
-    wgpu::RequestAdapterOptions options = {};
+    wgpu::RequestAdapterOptions options;
     options.compatibleSurface = mSurface;
     options.powerPreference = wgpu::PowerPreference::HighPerformance;
 
@@ -194,7 +194,7 @@ bool NativeContext::CreateSwapChain(uint32_t width, uint32_t height) {
     mWidth = width;
     mHeight = height;
 
-    wgpu::SurfaceConfiguration config = {};
+    wgpu::SurfaceConfiguration config;
     config.device = mDevice;
     config.format = mSwapChainFormat;
     config.usage = wgpu::TextureUsage::RenderAttachment;
@@ -218,7 +218,7 @@ wgpu::TextureView NativeContext::GetCurrentSwapChainView() {
         return nullptr;
     }
 
-    wgpu::TextureViewDescriptor viewDesc = {};
+    wgpu::TextureViewDescriptor viewDesc;
     viewDesc.label = "SwapChain View";
     viewDesc.format = mSwapChainFormat;
     viewDesc.dimension = wgpu::TextureViewDimension::e2D;

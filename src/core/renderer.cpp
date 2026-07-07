@@ -402,7 +402,7 @@ bool Renderer::CreatePipeline(RenderPass& pass, wgpu::ShaderModule newModule, Sh
     wgpu::Device device = mContext->GetDevice();
 
     // Configure vertex attribute layouts matching Vertex struct
-    wgpu::VertexAttribute vertexAttributes[4] = {};
+    std::array<wgpu::VertexAttribute, 4> vertexAttributes = {};
 
     // position (location 0)
     vertexAttributes[0].shaderLocation = 0;
@@ -427,8 +427,8 @@ bool Renderer::CreatePipeline(RenderPass& pass, wgpu::ShaderModule newModule, Sh
     wgpu::VertexBufferLayout vertexBufferLayout;
     vertexBufferLayout.arrayStride = sizeof(Vertex);
     vertexBufferLayout.stepMode = wgpu::VertexStepMode::Vertex;
-    vertexBufferLayout.attributeCount = 4;
-    vertexBufferLayout.attributes = vertexAttributes;
+    vertexBufferLayout.attributeCount = vertexAttributes.size();
+    vertexBufferLayout.attributes = vertexAttributes.data();
 
     // Build color target state
     wgpu::ColorTargetState colorTarget;
@@ -616,10 +616,10 @@ void Renderer::UpdateUniformBuffers() {
 }
 
 wgpu::BindGroup Renderer::GetOrCreateBindGroup1(RenderPass& pass) {
-    wgpu::TextureView currentViews[4] = {};
+    std::array<wgpu::TextureView, 4> currentViews = {};
     bool cacheValid = (pass.bindGroup1 != nullptr);
 
-    for (int i = 0; i < 4; ++i) {
+    for (size_t i = 0; i < currentViews.size(); ++i) {
         wgpu::TextureView view = nullptr;
         if (!pass.inputs[i].empty()) {
             view = mTextureManager->GetReadView(pass.inputs[i]);
@@ -640,15 +640,15 @@ wgpu::BindGroup Renderer::GetOrCreateBindGroup1(RenderPass& pass) {
     pass.bindGroup1 = nullptr;
 
     wgpu::Device device = mContext->GetDevice();
-    wgpu::BindGroupEntry entries[5] = {};
+    std::array<wgpu::BindGroupEntry, 5> entries = {};
     
     // Sampler
     entries[0].binding = 0;
     entries[0].sampler = mTextureManager->GetDefaultSampler();
 
     // iChannel0..3
-    for (int i = 0; i < 4; ++i) {
-        entries[i + 1].binding = i + 1;
+    for (size_t i = 0; i < currentViews.size(); ++i) {
+        entries[i + 1].binding = static_cast<uint32_t>(i + 1);
         entries[i + 1].textureView = currentViews[i];
         pass.boundViews[i] = currentViews[i];
     }
@@ -656,8 +656,8 @@ wgpu::BindGroup Renderer::GetOrCreateBindGroup1(RenderPass& pass) {
     wgpu::BindGroupDescriptor desc;
     desc.label = (pass.name + " Bind Group 1 (Textures)").c_str();
     desc.layout = mBindGroupLayout1;
-    desc.entryCount = 5;
-    desc.entries = entries;
+    desc.entryCount = entries.size();
+    desc.entries = entries.data();
 
     pass.bindGroup1 = device.CreateBindGroup(&desc);
     return pass.bindGroup1;
@@ -684,7 +684,7 @@ void Renderer::Render() {
             continue;
         }
 
-        wgpu::RenderPassColorAttachment colorAttachment = {};
+        wgpu::RenderPassColorAttachment colorAttachment;
         if (pass.name == "Image") {
             colorAttachment.view = backBufferView;
         } else {
@@ -701,7 +701,7 @@ void Renderer::Render() {
         colorAttachment.storeOp = wgpu::StoreOp::Store;
         colorAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
 
-        wgpu::RenderPassDepthStencilAttachment depthAttachment = {};
+        wgpu::RenderPassDepthStencilAttachment depthAttachment;
         depthAttachment.view = mDepthTextureView;
         depthAttachment.depthLoadOp = wgpu::LoadOp::Clear;
         depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
@@ -710,7 +710,7 @@ void Renderer::Render() {
         depthAttachment.stencilStoreOp = wgpu::StoreOp::Store;
         depthAttachment.stencilClearValue = 0;
 
-        wgpu::RenderPassDescriptor renderPassDesc = {};
+        wgpu::RenderPassDescriptor renderPassDesc;
         renderPassDesc.label = (pass.name + " Render Pass").c_str();
         renderPassDesc.colorAttachmentCount = 1;
         renderPassDesc.colorAttachments = &colorAttachment;
@@ -749,8 +749,7 @@ void Renderer::Render() {
     cmdBufferDesc.label = "Renderer Command Buffer";
     wgpu::CommandBuffer commandBuffer = encoder.Finish(&cmdBufferDesc);
 
-    wgpu::CommandBuffer commandBuffers[1] = {commandBuffer};
-    queue.Submit(1, commandBuffers);
+    queue.Submit(1, &commandBuffer);
 
     mContext->Present();
 }

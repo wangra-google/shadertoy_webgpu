@@ -35,7 +35,7 @@ bool WebContext::Init() {
     }
 
     // Request Adapter
-    wgpu::RequestAdapterOptions options = {};
+    wgpu::RequestAdapterOptions options;
     options.compatibleSurface = mSurface;
     options.powerPreference = wgpu::PowerPreference::HighPerformance;
 
@@ -124,7 +124,7 @@ bool WebContext::CreateSwapChain(uint32_t width, uint32_t height) {
     mWidth = width;
     mHeight = height;
 
-    wgpu::SurfaceConfiguration config = {};
+    wgpu::SurfaceConfiguration config;
     config.device = mDevice;
     config.format = mSwapChainFormat;
     config.usage = wgpu::TextureUsage::RenderAttachment;
@@ -148,7 +148,7 @@ wgpu::TextureView WebContext::GetCurrentSwapChainView() {
         return nullptr;
     }
 
-    wgpu::TextureViewDescriptor viewDesc = {};
+    wgpu::TextureViewDescriptor viewDesc;
     viewDesc.label = "Web SwapChain View";
     viewDesc.format = mSwapChainFormat;
     viewDesc.dimension = wgpu::TextureViewDimension::e2D;
